@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-11T14:43:11Z",
+  "phase": "02",
+  "phase_name": "Viewport + Yaw + Export (Complete UX Loop)",
+  "phase_dir": ".planning/phases/01-rust-wasm-core",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Multi-worker candidate computation", "status": "done"},
+    {"id": 2, "name": "Mesh decimation for scoring speed", "status": "done"},
+    {"id": 3, "name": "Build plate + overhang color visualization", "status": "done"},
+    {"id": 4, "name": "Centroid-based rotation pivot", "status": "done"},
+    {"id": 5, "name": "Face normal / position sync fix in WASM", "status": "done"}
+  ],
+  "remaining_tasks": [
+    {"id": 6, "name": "Verify candidates correctly sit on build plate", "status": "in_progress"},
+    {"id": 7, "name": "Fix user-reported issues from testing", "status": "not_started"},
+    {"id": 8, "name": "Update GSD state to reflect actual project progress", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "GSD state is stale — ROADMAP.md and STATE.md don't reflect the actual code state (code has progressed through Phase 1 and most of Phase 2)", "type": "external", "workaround": "Update STATE.md before planning more work"},
+    {"description": "Candidate quaternion composition may still need verification — align dir to -Y before yaw", "type": "technical", "workaround": "Test with the bird STL at localhost:5173"}
+  ],
+  "human_actions_pending": [
+    {"action": "Test the current build at http://localhost:5173/ with an STL file", "context": "Verify candidates sit on build plate and overhang colors are correct", "blocking": true},
+    {"action": "Manually verify export STL downloads correct orientation", "context": "STL export uses the full quaternion; verify the output matches the viewport display", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Use centroid (average vertex position) instead of bounding-box center as rotation pivot", "rationale": "Centroid = center of mass for uniform density; rotation around COM keeps the model stable on the build plate", "phase": "02"},
+    {"decision": "WASM returns clean positions (no degenerate triangles) to keep positions/normals/areas in sync", "rationale": "mesh::precompute_mesh filters zero-area triangles; returning 'flat' caused mismatch between positions array and normals/areas arrays", "phase": "02"},
+    {"decision": "Multi-worker architecture splitting directions across navigator.hardwareConcurrency - 1 workers", "rationale": "Parallel scoring gives ~4x speedup on quad-core; each worker processes a contiguous dirStart/dirCount slice", "phase": "02"},
+    {"decision": "Decimate both positions and normals/areas to ~12K elements for scoring", "rationale": "Full 500K model x 400 candidates = 200M iterations; 12K = 50x fewer, rank order preserved", "phase": "02"},
+    {"decision": "Compose full candidate quaternion as qYaw * qAlign(dir, -Y)", "rationale": "computeDefaultYaw only returns yaw (rotation around candidate axis); need to first align the candidate direction to -Y for correct display and lift", "phase": "02"}
+  ],
+  "uncommitted_files": [
+    ".planning/ROADMAP.md", ".planning/STATE.md",
+    ".gitignore", "core/", "web/", "resources/",
+    "test-tetrahedron.stl", "tools/"
+  ],
+  "next_action": "Verify the fix: load an STL at localhost:5173, check that all candidates sit on the build plate (lowest point at y=0) and overhang colors correspond to the shadow the model would cast on the plate",
+  "context_notes": "The user identified that candidates appear below the build plate plane. Root cause: the quaternion from computeDefaultYaw only contains yaw (rotation around the candidate direction axis), not the alignment of that direction to -Y. Fix: compose qFull = qYaw * quaternionAlign(dir, (0,-1,0)) in computeSlice. Also fixed: WASM returning degenerate triangles in positions but not in normals (caused splattered overhang colors), and switched from bbox-center to centroid for rotation pivot. Vite dev server running at localhost:5173."
+}
