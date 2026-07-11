@@ -1,5 +1,5 @@
 export interface OrientConfig {
-  mode: "hull";
+  mode: "hull" | "hull_plus_sphere";
   criticalAngleDeg: number;
   dedupeAngleDeg: number;
   refineIterations: number;

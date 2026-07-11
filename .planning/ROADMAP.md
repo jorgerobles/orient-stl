@@ -65,7 +65,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Rust WASM enhancements: Fibonacci sphere sampling, hull+sphere mode, hill-climb refine_orientation()
-- [ ] 03-02-PLAN.md — Interactive overlay: height-weighted scoring, hull+sphere toggle, drag-to-rotate with live score badge, Varita Mágica button
+- [x] 03-02-PLAN.md — Interactive overlay: height-weighted scoring, hull+sphere toggle, drag-to-rotate with live score badge, Varita Mágica button
 
 ### Phase 4: v3 UX Polish
 **Goal**: Rich browsing experience with thumbnail strip, favorites persistence across sessions, and batch ZIP export
@@ -93,7 +93,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Rust WASM Core Engine + Build Toolchain | 3/3 | ✅ Complete | 2026-07-11 |
 | 2. Viewport + Yaw + Export (Complete UX Loop) | 3/3 | ✅ Complete | 2026-07-11 |
-| 3. v2 Enhancements | 1/2 | ◆ Wave 1 done (WASM core) | - |
+| 3. v2 Enhancements | 2/2 | ✅ Complete | - |
 | 4. v3 UX Polish | 0/3 | Not started | - |
 
 **Phase 2 detail (final):**

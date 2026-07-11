@@ -232,6 +232,82 @@ export class Viewport {
     this.controls.update();
   }
 
+  private overlayActive = false;
+  private overlayStartQuat: THREE.Quaternion | null = null;
+  private overlayStartMouse = { x: 0, y: 0 };
+  private onOrientationChange: ((q: [number, number, number, number]) => void) | null = null;
+  private overlayPointerDownHandler: ((e: PointerEvent) => void) | null = null;
+  private overlayPointerMoveHandler: ((e: PointerEvent) => void) | null = null;
+  private overlayPointerUpHandler: ((e: PointerEvent) => void) | null = null;
+
+  enterOverlayMode(container: HTMLElement, onChange: (q: [number, number, number, number]) => void): void {
+    if (!this.mesh) return;
+    this.overlayActive = true;
+    this.onOrientationChange = onChange;
+    this.controls.enabled = false;
+
+    const el = this.renderer.domElement;
+
+    this.overlayPointerDownHandler = (e: PointerEvent) => {
+      this.overlayStartQuat = this.mesh!.quaternion.clone();
+      this.overlayStartMouse = { x: e.clientX, y: e.clientY };
+      el.setPointerCapture(e.pointerId);
+    };
+
+    this.overlayPointerMoveHandler = (e: PointerEvent) => {
+      if (!this.overlayStartQuat || !this.mesh) return;
+      const dx = (e.clientX - this.overlayStartMouse.x) * 0.005;
+      const dy = (e.clientY - this.overlayStartMouse.y) * 0.005;
+
+      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+      const cameraDir = new THREE.Vector3();
+      this.camera.getWorldDirection(cameraDir);
+      const cameraRight = new THREE.Vector3().crossVectors(cameraDir, cameraUp).normalize();
+
+      const qx = new THREE.Quaternion().setFromAxisAngle(cameraUp, dx);
+      const qy = new THREE.Quaternion().setFromAxisAngle(cameraRight, dy);
+      const totalQ = qx.multiply(qy);
+      this.mesh.quaternion.copy(totalQ.multiply(this.overlayStartQuat.clone()));
+
+      this.colorOverhang();
+      const bb = new THREE.Box3().setFromObject(this.mesh);
+      this.modelGroup.position.set(0, liftOntoPlate(bb.min.y), 0);
+
+      if (this.onOrientationChange) {
+        const q = this.mesh.quaternion;
+        this.onOrientationChange([q.x, q.y, q.z, q.w]);
+      }
+    };
+
+    this.overlayPointerUpHandler = () => {
+      this.overlayStartQuat = null;
+    };
+
+    el.addEventListener('pointerdown', this.overlayPointerDownHandler);
+    el.addEventListener('pointermove', this.overlayPointerMoveHandler);
+    el.addEventListener('pointerup', this.overlayPointerUpHandler);
+  }
+
+  exitOverlayMode(): void {
+    this.overlayActive = false;
+    this.controls.enabled = true;
+    const el = this.renderer.domElement;
+    if (this.overlayPointerDownHandler) el.removeEventListener('pointerdown', this.overlayPointerDownHandler);
+    if (this.overlayPointerMoveHandler) el.removeEventListener('pointermove', this.overlayPointerMoveHandler);
+    if (this.overlayPointerUpHandler) el.removeEventListener('pointerup', this.overlayPointerUpHandler);
+    this.overlayPointerDownHandler = null;
+    this.overlayPointerMoveHandler = null;
+    this.overlayPointerUpHandler = null;
+    this.onOrientationChange = null;
+    this.overlayStartQuat = null;
+  }
+
+  getMeshQuaternion(): [number, number, number, number] {
+    if (!this.mesh) return [1, 0, 0, 0];
+    const q = this.mesh.quaternion;
+    return [q.x, q.y, q.z, q.w];
+  }
+
   dispose(): void {
     cancelAnimationFrame(this.animationId);
     this.renderer.dispose();
