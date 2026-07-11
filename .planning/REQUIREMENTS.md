@@ -53,15 +53,21 @@
 
 ### Enhanced Scoring
 
-- **ORIENT-09**: Height-weighted overhang penalty (height above lowest point in orientation)
-- **ORIENT-10**: `hull_plus_sphere` candidate generation (Fibonacci sphere sampling, N configurable)
-- **ORIENT-11**: S² hill-climbing refinement on top-K candidates (configurable iterations)
-- **ORIENT-12**: Multi-metric sorting UI (sort by overhang/height/stability independently)
+- **ORIENT-09**: Height-weighted overhang penalty (height above lowest point in orientation, multiplicative k=0.5)
+- **ORIENT-10**: `hull_plus_sphere` candidate generation (Fibonacci sphere sampling, ~200 samples)
+- **ORIENT-11**: S² hill-climbing refinement from current orientation (Rust WASM, wizard button in overlay)
+- **ORIENT-12**: [REMOVED] Multi-metric sorting UI — not needed (unified into single composite score)
 
 ### Viewport Enhancements
 
-- **VIEW-06**: Overhang heatmap visualization (face colors by penalty contribution)
-- **VIEW-07**: Side-by-side or overlay comparison of two candidates
+- **VIEW-06**: [REMOVED] Overhang heatmap — not needed
+- **VIEW-07**: [REMOVED] Side-by-side comparison — not needed
+
+### Interactive Overlay (new)
+
+- **OVERLAY-01**: Click candidate enters overlay mode with drag-to-rotate on model
+- **OVERLAY-02**: Live score badge updates in real-time during drag
+- **OVERLAY-03**: "Varita mágica" button runs hill-climb from current orientation
 
 ## v3 Requirements
 
@@ -128,9 +134,9 @@
 | ORIENT-09 | Phase 3 | Pending |
 | ORIENT-10 | Phase 3 | Pending |
 | ORIENT-11 | Phase 3 | Pending |
-| ORIENT-12 | Phase 3 | Pending |
-| VIEW-06 | Phase 3 | Pending |
-| VIEW-07 | Phase 3 | Pending |
+| OVERLAY-01 | Phase 3 | Pending |
+| OVERLAY-02 | Phase 3 | Pending |
+| OVERLAY-03 | Phase 3 | Pending |
 | THUMB-01 | Phase 4 | Pending |
 | THUMB-02 | Phase 4 | Pending |
 | THUMB-03 | Phase 4 | Pending |
