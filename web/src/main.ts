@@ -1,7 +1,7 @@
 import { initWasm, loadSTLBytes, prepareData } from './loadSTL';
 import { Viewport } from './viewport';
 import { exportSTL } from './exportSTL';
-import { decimateForScore } from './compute';
+import { decimateForScore, nearestCandidateScore } from './compute';
 import { mergeCandidates, rankByConsensus } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
 import { defaultConfig } from './types';
@@ -10,11 +10,13 @@ let config = defaultConfig();
 let candidates: Candidate[] = [];
 let positions: Float32Array | null = null;
 let faceNormals: Float32Array | null = null;
+let areas: Float32Array | null = null;
 let currentIndex = 0;
 let yawOffset = 0;
 let stlName = '';
 let viewport: Viewport;
 let workers: Worker[] = [];
+let lastFile: File | null = null;
 
 const paint = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -33,6 +35,143 @@ const cancelBtn = document.getElementById('cancel-btn')!;
 
 viewport = new Viewport(viewportContainer);
 
+let overlayActive = false;
+let overlayToolbarEl: HTMLElement | null = null;
+let overlayBackdropEl: HTMLElement | null = null;
+let scoreBadgeValueEl: HTMLElement | null = null;
+let overlayKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+function enterOverlay(candidateIndex: number): void {
+  if (overlayActive || candidates.length === 0) return;
+  showCandidate(candidateIndex);
+  overlayActive = true;
+
+  document.getElementById('prev-btn')!.style.display = 'none';
+  document.getElementById('next-btn')!.style.display = 'none';
+  document.getElementById('yaw-panel')!.style.display = 'none';
+
+  viewportContainer.classList.add('overlay-active');
+
+  const backdropEl = document.createElement('div');
+  backdropEl.className = 'overlay-backdrop';
+  viewportContainer.appendChild(backdropEl);
+  overlayBackdropEl = backdropEl;
+
+  const toolbarEl = document.createElement('div');
+  toolbarEl.className = 'overlay-toolbar';
+  toolbarEl.innerHTML = `
+    <span class="label">Overlay Mode</span>
+    <span class="hint">Esc to exit</span>
+    <div class="score-badge">
+      <span class="label">Score</span>
+      <span class="value" id="score-badge-value">${(candidates[candidateIndex].compositeScore * 100).toFixed(0)}%</span>
+    </div>
+    <button id="varita-btn" class="button button-success" style="padding:0.5rem 1.5rem">✨ Varita Mágica</button>
+    <button class="exit-btn" id="overlay-exit-btn">Exit</button>
+  `;
+  viewportContainer.appendChild(toolbarEl);
+  overlayToolbarEl = toolbarEl;
+
+  scoreBadgeValueEl = toolbarEl.querySelector('.value')!;
+  toolbarEl.querySelector('#overlay-exit-btn')!.addEventListener('click', exitOverlay);
+  overlayKeyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') exitOverlay(); };
+  document.addEventListener('keydown', overlayKeyHandler);
+
+  // Wire varita button
+  const varitaBtn = toolbarEl.querySelector('#varita-btn') as HTMLButtonElement;
+  varitaBtn.addEventListener('click', async () => {
+    if (!positions || !faceNormals || !areas || candidates.length === 0 || !overlayActive) return;
+
+    varitaBtn.disabled = true;
+    varitaBtn.textContent = 'Refining...';
+    if (scoreBadgeValueEl) scoreBadgeValueEl.textContent = 'Refining...';
+
+    try {
+      const q = viewport.getMeshQuaternion();
+      const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
+      const dir = (() => {
+        const [w, x, y, z] = invQ;
+        const v: [number, number, number] = [0, -1, 0];
+        const uv_x = y * v[2] - z * v[1];
+        const uv_y = z * v[0] - x * v[2];
+        const uv_z = x * v[1] - y * v[0];
+        const uuv_x = y * uv_z - z * uv_y;
+        const uuv_y = z * uv_x - x * uv_z;
+        const uuv_z = x * uv_y - y * uv_x;
+        return [
+          v[0] + 2.0 * (w * uv_x + uuv_x),
+          v[1] + 2.0 * (w * uv_y + uuv_y),
+          v[2] + 2.0 * (w * uv_z + uuv_z),
+        ] as [number, number, number];
+      })();
+
+      const wasmModule = await import('../pkg/orient_core.js');
+
+      const result = (wasmModule as any).refine_orientation(
+        positions, faceNormals, areas,
+        dir[0], dir[1], dir[2],
+        config.criticalAngleDeg,
+        50,
+      );
+
+      const refinedDir: [number, number, number] = [result[0], result[1], result[2]];
+      // Compute quaternion aligning refined direction to -Y
+      const THREE = await import('three');
+      const newQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(refinedDir[0], refinedDir[1], refinedDir[2]),
+        new THREE.Vector3(0, -1, 0)
+      );
+      viewport.showCandidate([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
+
+      const nearest = nearestCandidateScore([newQuat.x, newQuat.y, newQuat.z, newQuat.w], candidates);
+      if (scoreBadgeValueEl) {
+        scoreBadgeValueEl.textContent = `${(nearest.score * 100).toFixed(0)}%`;
+      }
+    } catch (err) {
+      console.error('Hill-climb failed:', err);
+      if (scoreBadgeValueEl && candidates[currentIndex]) {
+        const badge = scoreBadgeValueEl;
+        badge.textContent = 'Error';
+        const restoreIdx = currentIndex;
+        setTimeout(() => {
+          const sc = candidates[restoreIdx]?.compositeScore ?? 0;
+          badge.textContent = `${(sc * 100).toFixed(0)}%`;
+        }, 3000);
+      }
+    }
+
+    varitaBtn.textContent = '✨ Varita Mágica';
+    varitaBtn.disabled = false;
+  });
+
+  viewport.enterOverlayMode(viewportContainer, (q) => {
+    const nearest = nearestCandidateScore(q, candidates);
+    if (scoreBadgeValueEl) {
+      scoreBadgeValueEl.textContent = `${(nearest.score * 100).toFixed(0)}%`;
+    }
+  });
+}
+
+function exitOverlay(): void {
+  if (!overlayActive) return;
+  overlayActive = false;
+  viewport.exitOverlayMode();
+
+  viewportContainer.classList.remove('overlay-active');
+  if (overlayBackdropEl) { overlayBackdropEl.remove(); overlayBackdropEl = null; }
+  if (overlayToolbarEl) { overlayToolbarEl.remove(); overlayToolbarEl = null; }
+  scoreBadgeValueEl = null;
+
+  document.getElementById('prev-btn')!.style.display = '';
+  document.getElementById('next-btn')!.style.display = '';
+  document.getElementById('yaw-panel')!.style.display = 'block';
+
+  if (overlayKeyHandler) {
+    document.removeEventListener('keydown', overlayKeyHandler);
+    overlayKeyHandler = null;
+  }
+}
+
 async function boot(): Promise<void> {
   statusEl.textContent = 'Initializing WASM...';
   try {
@@ -45,7 +184,9 @@ async function boot(): Promise<void> {
 }
 
 async function handleFile(file: File): Promise<void> {
+  if (overlayActive) exitOverlay();
   cancelCompute();
+  lastFile = file;
   if (!file.name.toLowerCase().endsWith('.stl')) {
     statusEl.textContent = 'Please select a .stl file';
     return;
@@ -76,6 +217,7 @@ async function handleFile(file: File): Promise<void> {
 
     positions = fullData.positions;
     faceNormals = fullData.normals;
+    areas = fullData.areas;
 
     await paint();
 
@@ -280,6 +422,12 @@ function rerank(): void {
   displayResults(candidates);
 }
 
+const hullSphereToggle = document.getElementById('hull-sphere-toggle') as HTMLInputElement;
+hullSphereToggle.addEventListener('change', () => {
+  config.mode = hullSphereToggle.checked ? 'hull_plus_sphere' : 'hull';
+  if (lastFile) handleFile(lastFile);
+});
+
 fileInput.addEventListener('change', () => {
   if (fileInput.files && fileInput.files.length > 0) handleFile(fileInput.files[0]);
 });
@@ -354,11 +502,11 @@ function displayResults(cands: Candidate[]): void {
   ).join('')}</ol>`;
 }
 
-// Click on candidate list items to view them
+// Click on candidate list items to enter overlay mode
 resultsEl.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest('li');
   if (!li || !li.dataset.index) return;
-  showCandidate(parseInt(li.dataset.index));
+  enterOverlay(parseInt(li.dataset.index));
 });
 
 boot();
