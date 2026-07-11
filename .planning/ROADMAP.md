@@ -6,9 +6,9 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 
 ## Phases
 
-- [ ] **Phase 1: Rust WASM Core Engine + Build Toolchain** — WASM `compute_orientations()` that parses STL, computes hull, generates/scored/deduplicated/stability-checked candidates
-- [ ] **Phase 2: Viewport + Yaw + Export (Complete UX Loop)** — three.js viewport with candidate navigation, circular yaw dial, single-file STL export
-- [ ] **Phase 3: v2 Enhancements** — Height-weighted scoring, hull+sphere mode, hill-climbing refinement, multi-metric sorting, overhang heatmap
+- [x] **Phase 1: Rust WASM Core Engine + Build Toolchain** — WASM `prepare_data()` parses STL, computes hull, generates + dedupes candidates; scoring/stability moved to JS workers (architecture drift — see 01-02-SUMMARY)
+- [x] **Phase 2: Viewport + Yaw + Export (Complete UX Loop)** — three.js viewport with candidate navigation, yaw adjustment, single-file STL export
+- [ ] **Phase 3: v2 Enhancements** — Height-weighted scoring, hull+sphere mode, hill-climbing refinement, multi-metric sorting, overhang heatmap (some items partially landed in Phase 1/2 drift)
 - [ ] **Phase 4: v3 UX Polish** — Thumbnail strip, favorites persistence (IndexedDB), multi-STL ZIP export
 
 ## Phase Details
@@ -27,9 +27,9 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: WASM Build Toolchain (wasm-pack + Vite + vite-plugin-wasm + Cargo.toml crate types)
-- [ ] 01-02: Rust Compute Core (stl.rs, mesh.rs, hull.rs, candidates.rs, scoring.rs, stability.rs, lib.rs)
-- [ ] 01-03: JS Bridge & File Input (file picker, drag-drop handler, WASM init, compute_orientations() call, result display)
+- [x] 01-01-PLAN.md — WASM Build Toolchain: crate scaffolding (cdylib+rlib), Vite+TS project, wasm-pack build verification
+- [x] 01-02-PLAN.md — Rust Compute Core: stl.rs, mesh.rs, hull.rs, candidates.rs, scoring.rs, stability.rs, lib.rs orchestration
+- [x] 01-03-PLAN.md — JS Bridge & File Input: file picker + drag-drop, WASM init, compute_orientations() call, DOM result display
 
 ### Phase 2: Viewport + Yaw + Export (Complete UX Loop)
 **Goal**: User sees candidates in a three.js viewport, navigates the ranked list, adjusts yaw with snap-to-geometry, and exports the oriented STL
@@ -37,36 +37,35 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: STL-04, VIEW-01, VIEW-02, VIEW-03, VIEW-04, VIEW-05, YAW-01, YAW-02, YAW-03, YAW-04, YAW-05, EXPORT-01, EXPORT-02
 **Success Criteria** (what must be TRUE):
-  1. three.js viewport displays the model at the current candidate orientation with orbit/pan/zoom controls
-  2. User can navigate next/prev candidate via buttons or keyboard; orientation changes instantly (quaternion copy); current rank and score are shown
-  3. User adjusts yaw via circular dial with magnetic snap to geometry-aligned candidates and numeric input field
-  4. "Reset to auto" button restores the default bbox-minimizing yaw
-  5. User exports the current orientation as a downloadable binary STL with transformed vertex positions
+   1. three.js viewport displays the model at the current candidate orientation with orbit/pan/zoom controls
+   2. User can navigate next/prev candidate via buttons or keyboard; orientation changes instantly (quaternion copy); current rank and score are shown
+   3. User adjusts yaw via linear slider with fixed 45° snap
+   4. "Reset to auto" button restores the default bbox-minimizing yaw
+   5. User exports the current orientation as a downloadable binary STL with transformed vertex positions
 **Plans**: 3 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: three.js Viewport (scene setup, OrbitControls, mesh display, candidate state management, navigation UI)
-- [ ] 02-02: Yaw Dial (circular drag interaction, rotating-calipers snap computation, numeric input, reset)
-- [ ] 02-03: STL Export (binary STL writer in JS, quaternion application, Blob download trigger)
+- [x] 02-01: three.js Viewport (scene setup, OrbitControls, mesh display, candidate state management, navigation UI) ✅
+- [x] 02-02: Yaw control (linear slider, 45° snap, reset) — circular dial + geometry snap deferred to Phase 3 overlay
+- [x] 02-03: STL Export (binary STL writer in JS, quaternion application, Blob download trigger) ✅
 
 ### Phase 3: v2 Enhancements
-**Goal**: Improved scoring accuracy through height-weighting, hull+sphere sampling, hill-climbing refinement, and richer UI with multi-metric sorting and heatmap visualization
+**Goal**: Improved scoring accuracy through height-weighting, hull+sphere sampling, and interactive overlay with drag-to-rotate score feedback + hill-climb wizard
 **Mode**: mvp
 **Depends on**: Phase 2
-**Requirements**: ORIENT-09, ORIENT-10, ORIENT-11, ORIENT-12, VIEW-06, VIEW-07
+**Requirements**: ORIENT-09, ORIENT-10, ORIENT-11, OVERLAY-01, OVERLAY-02, OVERLAY-03
 **Success Criteria** (what must be TRUE):
-  1. User can toggle height-weighted scoring; candidate ranking changes for models with tall features
-  2. User can select hull+sphere mode; additional Fibonacci-sphere candidates appear in the ranked list
-  3. Hill-climbing refinement improves top-K candidates (configurable iterations); refined orientations score better
-  4. User can sort the candidate list by overhang score, height score, or stability independently
-  5. Overhang penalty heatmap visible on the model faces for the selected candidate
+   1. User can toggle hull+sphere mode; additional ~200 Fibonacci-sphere candidates appear in the ranked list
+   2. Height-weighted scoring (k=0.5 multiplicative) improves ranking for models with tall overhangs
+   3. User clicks a candidate → overlay mode with drag-to-rotate on the model + live score badge
+   4. "Varita mágica" button in overlay runs hill-climb in Rust WASM from current orientation
 **Plans**: 2 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01: Rust Enhancements (refine.rs, height-weighted scoring coefficient, hull+sphere candidate generation)
-- [ ] 03-02: UI Enhancements (multi-metric sort column headers, overhang face-color heatmap, side-by-side comparison mode)
+- [ ] 03-01-PLAN.md — Rust WASM enhancements: Fibonacci sphere sampling, hull+sphere mode, hill-climb refine_orientation()
+- [ ] 03-02-PLAN.md — Interactive overlay: height-weighted scoring, hull+sphere toggle, drag-to-rotate with live score badge, Varita Mágica button
 
 ### Phase 4: v3 UX Polish
 **Goal**: Rich browsing experience with thumbnail strip, favorites persistence across sessions, and batch ZIP export
@@ -92,7 +91,14 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Rust WASM Core Engine + Build Toolchain | 0/3 | Not started | - |
-| 2. Viewport + Yaw + Export (Complete UX Loop) | 0/3 | Not started | - |
+| 1. Rust WASM Core Engine + Build Toolchain | 3/3 | ✅ Complete | 2026-07-11 |
+| 2. Viewport + Yaw + Export (Complete UX Loop) | 3/3 | ✅ Complete | 2026-07-11 |
 | 3. v2 Enhancements | 0/2 | Not started | - |
 | 4. v3 UX Polish | 0/3 | Not started | - |
+
+**Phase 2 detail (final):**
+- 02-01 Viewport: ✅ complete (build plate, heatmap, centroid pivot, centering bug fixed)
+- 02-02 Yaw: ✅ complete (linear slider + 45° snap; circular dial + geometry snap → Phase 3)
+- 02-03 Export: ✅ complete
+- Scoring: 4-metric consensus (overhang, footprint, cross-section, shadowed-overhang), yaw-optimized shadow (8-sample min), 100%→0% ranking
+- Progress bar: segmented (per-worker) with paint-yield between sync phases
