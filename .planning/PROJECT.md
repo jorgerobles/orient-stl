@@ -57,10 +57,17 @@ This tool addresses a gap in the resin printing workflow: existing slicers (Prus
 |----------|-----------|---------|
 | Score depends only on down_local (S², not SO(3)) | Yaw is invariant for overhang — reduces search space from 3 to 2 DOF | ✓ Good |
 | Vendored quickhull, no crate | Smaller WASM binary, no BLAS/rayon issues on wasm target | ✓ Good |
-| stl-io for STL parsing | Zero dependencies, takes impl Read, works with Cursor<&[u8]> in WASM | ✓ Good |
+| stl-io for STL parsing | Zero dependencies, takes impl Read, works with Cursor<&[u8]> in WASM | ✓ Confirmed (spike resolved) |
+| WASM boundary is `prepare_data()`, not `compute_orientations()` | Pragmatic split: WASM does one-time geometry prep, JS workers do per-candidate scoring for iteration speed | ✓ Good — defer move-back-to-WASM until JS proves slow |
+| Phase 2 scope (viewport/export/heatmap) landed in Phase 1 | Building the viewport was the natural way to *see* candidates; DOM-only interim skipped | ✓ Good — Phase 2 tracking must reconcile |
+| Centroid (vertex average) as rotation pivot | Center of mass for uniform density; stable rotation | ✓ Good |
+| Full quaternion = `qYaw * qAlign(dir, -Y)` | Align candidate dir to -Y first, then apply yaw — fixes below-build-plate rendering | ✓ Good (verify per candidate) |
+| Multi-worker: split directions across `hardwareConcurrency - 1` | Parallel scoring ~4x on quad-core, no cross-worker sync | ✓ Good |
+| Decimate to ~12K elements for scoring | 500K×400 = 200M iters → 12K = 50x faster, rank order preserved | ✓ Good |
+| WASM-first for computation; WebGPU is upgrade path | Don't add JS SIMD/WASM threads/Node deps; WebGPU for future GPU-class throughput | — Aspirational (v2/v3) |
 | Binary stability reject in v1 | Cheap geometric predicate (~40 lines), prevents ranking recommending unstable orientations | — Pending |
 | Yaw control via circular dial + snap | Rotating calipers reused from bbox computation; snap from hull edge aligns | — Pending |
-| Coarse granularity (3 phases) | Aligns with spec's existing v1/v2/v3 roadmap | — Pending |
+| Coarse granularity (4 phases) | Aligns with spec's existing v1/v2/v3 roadmap | — Pending |
 
 ## Evolution
 
@@ -80,4 +87,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-11 after project initialization*
+*Last updated: 2026-07-11 — GSD state reconciled with codebase after Phase 1 completion and Phase 2 implementation drift*

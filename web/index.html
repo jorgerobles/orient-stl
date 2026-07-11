@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orient STL — Resin Printing Orientation Tool</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #333; background: #fafafa; overflow-x: hidden; }
+    #app { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: auto 1fr; min-height: 100vh; }
+    .sidebar { grid-column: 1; grid-row: 1 / 3; padding: 1.5rem 1rem; background: #fff; border-right: 1px solid #ddd; overflow-y: auto; }
+    .main { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; }
+    h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+    .subtitle { color: #666; font-size: 0.8rem; margin-bottom: 1rem; }
+    .status { padding: 0.5rem 0.75rem; background: #e8f4fd; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
+    .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 1.5rem; text-align: center; transition: all 0.2s; margin-bottom: 1rem; background: #fafafa; }
+    .drop-zone.drag-over { border-color: #4a90d9; background: #e8f4fd; }
+    .drop-zone p { font-size: 0.85rem; color: #888; margin-bottom: 0.5rem; }
+    .button { display: inline-block; padding: 0.4rem 1.2rem; background: #4a90d9; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; border: none; }
+    .button:hover { background: #357abd; }
+    .button-sm { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
+    .button-success { background: #27ae60; }
+    .button-success:hover { background: #219a52; }
+    .button-danger { background: #e74c3c; }
+    .button-danger:hover { background: #c0392b; }
+    .progress-container { margin-bottom: 1rem; }
+    .progress-bar-bg { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; position: relative; }
+    .progress-bar-fill { height: 100%; background: #4a90d9; border-radius: 3px; transition: width 0.2s; }
+    .progress-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.3rem; }
+    .progress-row span { font-size: 0.8rem; color: #666; }
+    @keyframes indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+    .progress-bar-fill.indeterminate { width: 35% !important; animation: indeterminate 1.2s ease-in-out infinite; will-change: transform; }
+    .progress-segments { display: flex; height: 100%; width: 100%; }
+    .segment { height: 100%; position: relative; overflow: hidden; background: #e0e0e0; border-right: 1px solid #ccc; }
+    .segment:last-child { border-right: none; }
+    .segment-fill { height: 100%; width: 0%; background: #e67e22; transition: width 0.15s; }
+    .segment.done .segment-fill { background: #4a90d9; }
+    .config-panel { background: #f8f8f8; border: 1px solid #eee; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem; }
+    .config-panel h3 { font-size: 0.85rem; margin-bottom: 0.5rem; }
+    .config-panel label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
+    .config-panel input[type="range"] { flex: 1; max-width: 150px; }
+    .hint { color: #888; font-size: 0.75rem; margin-top: 0.25rem; }
+    #viewport { flex: 1; min-height: 400px; background: #2a2a2a; }
+    #results { background: #f8f8f8; border: 1px solid #eee; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem; font-size: 0.8rem; }
+    #results h3 { font-size: 0.85rem; margin-bottom: 0.25rem; }
+    #results ol { margin-left: 1.25rem; }
+    #results li { margin-bottom: 0.25rem; cursor: pointer; padding: 0.1rem 0.3rem; border-radius: 3px; }
+    #results li:hover { background: #e8f4fd; }
+    #results li.active { background: #d4edda; font-weight: 600; }
+    .info-icon { cursor: help; opacity: 0.5; font-size: 0.8rem; margin-left: 0.3rem; }
+    .info-icon:hover { opacity: 1; }
+    #nav-controls { display: none; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.5rem; background: #fff; border-bottom: 1px solid #ddd; }
+    #candidate-info { font-size: 0.85rem; margin: 0 1rem; white-space: nowrap; }
+    #yaw-panel { display: none; padding: 0.5rem 0.75rem; background: #f8f8f8; border-bottom: 1px solid #ddd; font-size: 0.8rem; }
+    #yaw-panel label { display: flex; align-items: center; gap: 0.5rem; }
+    #yaw-panel input[type="range"] { flex: 1; max-width: 200px; }
+    .yaw-controls { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem; }
+    .export-bar { display: none; padding: 0.5rem 0.75rem; background: #fff; border-top: 1px solid #ddd; text-align: right; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="sidebar">
+      <h1>Orient STL</h1>
+      <p class="subtitle">Resin printing orientation tool — automatically finds optimal print orientations for STL models</p>
+
+      <div id="status" class="status">Initializing...</div>
+
+      <div id="drop-zone" class="drop-zone">
+        <p>Drag &amp; drop an STL file here</p>
+        <p>or</p>
+        <label class="file-label">
+          <input type="file" id="file-input" accept=".stl" hidden />
+          <span class="button">Choose File</span>
+        </label>
+      </div>
+
+      <div class="config-panel">
+        <h3>Configuration</h3>
+        <label>
+          Critical Angle: <span id="angle-value">30</span>°
+          <input type="range" id="angle-slider" min="20" max="50" value="30" step="1" />
+        </label>
+        <p class="hint">Faces steeper than this angle (from vertical) contribute to overhang penalty.</p>
+        <p class="hint">Consensus ranking (minimax across overhang, footprint, cross-section, shadowed). Lower composite = better.</p>
+      </div>
+
+      <div id="progress-container" class="progress-container" style="display:none">
+        <div class="progress-bar-bg">
+          <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-row">
+          <span id="progress-label">Computing candidates...</span>
+          <button id="cancel-btn" class="button button-sm button-danger">Cancel</button>
+        </div>
+      </div>
+
+      <div id="results" class="results">
+        <p style="color:#888;font-style:italic;font-size:0.85rem">Load an STL to see results.</p>
+      </div>
+    </div>
+
+    <div class="main">
+      <div id="nav-controls">
+        <button id="prev-btn" class="button button-sm">&larr; Prev</button>
+        <span id="candidate-info">—</span>
+        <button id="next-btn" class="button button-sm">Next &rarr;</button>
+      </div>
+
+      <div id="yaw-panel">
+        <label>
+          Yaw: <span id="yaw-value">0</span>°
+          <input type="range" id="yaw-slider" min="-180" max="180" value="0" step="1" />
+        </label>
+        <div class="yaw-controls">
+          <button id="snap-btn" class="button button-sm">Snap 45&deg;</button>
+          <button id="yaw-reset-btn" class="button button-sm">Reset</button>
+        </div>
+      </div>
+
+      <div id="viewport"></div>
+
+      <div class="export-bar" id="export-bar">
+        <button id="export-btn" class="button button-success" style="display:none">Export STL</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
