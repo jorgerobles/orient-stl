@@ -2,6 +2,8 @@ import { initWasm, loadSTLBytes, prepareData } from './loadSTL';
 import { Viewport } from './viewport';
 import { exportSTL } from './exportSTL';
 import { rotatePositions } from './rotate';
+import { applyConvention } from './convention';
+import type { LoadConvention } from './convention';
 import { decimateForScore, nearestCandidateScore } from './compute';
 import { mergeCandidates, rankByConsensus } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
@@ -17,6 +19,7 @@ let stlName = '';
 let viewport: Viewport;
 let workers: Worker[] = [];
 let lastFile: File | null = null;
+let loadConvention: LoadConvention = 'z-up';
 
 const paint = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -176,11 +179,16 @@ async function handleFile(file: File): Promise<void> {
     if (raw.positions.length === 0) throw new Error('No triangles in STL');
     if (raw.directions.length === 0) throw new Error('No candidates generated');
 
+    // Bake the user's chosen axis convention into the geometry AND candidate
+    // directions before anything else sees them. Positions, face normals, and
+    // direction vectors are all flat xyz arrays in the same frame, so the
+    // same swap keeps the scoring pipeline consistent. Areas are per-triangle
+    // scalars — unaffected by rotation.
     const fullData: OriData = {
-      positions: new Float32Array(raw.positions),
-      normals: new Float32Array(raw.normals),
+      positions: applyConvention(new Float32Array(raw.positions), loadConvention),
+      normals: applyConvention(new Float32Array(raw.normals), loadConvention),
       areas: new Float32Array(raw.areas),
-      directions: new Float32Array(raw.directions),
+      directions: applyConvention(new Float32Array(raw.directions), loadConvention),
     };
 
     positions = fullData.positions;
@@ -355,6 +363,12 @@ angleSlider.addEventListener('input', () => {
 const hullSphereToggle = document.getElementById('hull-sphere-toggle') as HTMLInputElement;
 hullSphereToggle.addEventListener('change', () => {
   config.mode = hullSphereToggle.checked ? 'hull_plus_sphere' : 'hull';
+  if (lastFile) handleFile(lastFile);
+});
+
+const conventionSelect = document.getElementById('convention-select') as HTMLSelectElement;
+conventionSelect.addEventListener('change', () => {
+  loadConvention = conventionSelect.value as LoadConvention;
   if (lastFile) handleFile(lastFile);
 });
 

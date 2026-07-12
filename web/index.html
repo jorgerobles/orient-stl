@@ -111,6 +111,11 @@
       color: #aaa; margin-bottom: 0.3rem;
     }
     .config-panel input[type="range"] { flex: 1; max-width: 140px; accent-color: #4a90d9; }
+    .config-panel select {
+      background: rgba(255,255,255,0.08); color: #ddd;
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
+      padding: 0.2rem 0.4rem; font-size: 0.78rem; accent-color: #4a90d9;
+    }
     .hint { color: #666; font-size: 0.72rem; margin-top: 0.2rem; }
     .config-checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: #aaa; margin-top: 0.4rem; cursor: pointer; }
     .config-checkbox input[type="checkbox"] { accent-color: #4a90d9; }
@@ -212,6 +217,14 @@
 
     <div class="config-panel">
       <h3>Configuration</h3>
+      <label>
+        STL axis:
+        <select id="convention-select">
+          <option value="z-up" selected>Z-up</option>
+          <option value="y-up">Y-up</option>
+        </select>
+      </label>
+      <p class="hint">How the file was authored. CAD = Z-up; Blender/three.js = Y-up.</p>
       <label>
         Critical Angle: <span id="angle-value">30</span>&deg;
         <input type="range" id="angle-slider" min="20" max="50" value="30" step="1" />
