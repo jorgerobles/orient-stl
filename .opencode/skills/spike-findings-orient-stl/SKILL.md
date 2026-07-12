@@ -34,6 +34,18 @@ Spike sessions wrapped: 2026-07-11
 Original spike source files are preserved in `sources/` for complete reference.
 </findings_index>
 
+<hard_rules>
+## WASM Rebuild Rule
+
+After ANY change to `core/src/*.rs`, WASM MUST be rebuilt before testing or committing:
+
+```bash
+wasm-pack build core --target bundler --out-dir web/pkg
+```
+
+The prebuilt `.wasm` at `web/pkg/` is a stale build artifact that does NOT auto-sync with Rust source. Forgetting this causes silent runtime errors ("Unknown mode", missing exports, wrong signatures). No Rust edit is complete until `wasm-pack build` succeeds and `web/pkg/` is updated.
+</hard_rules>
+
 <metadata>
 ## Processed Spikes
 
