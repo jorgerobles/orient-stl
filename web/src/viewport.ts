@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { centroidTranslate, liftOntoPlate } from './centering';
+import { centroidTranslate, boundingRadius } from './centering';
+
+type DragMode = null | 'axis-x' | 'axis-y' | 'axis-z' | 'camera';
 
 export class Viewport {
   private scene: THREE.Scene;
@@ -12,6 +14,7 @@ export class Viewport {
   private faceNormals: Float32Array | null = null;
   private criticalAngleDeg = 45;
   private plateGroup: THREE.Group;
+  private boundingRadius = 0;
   private animationId = 0;
 
   constructor(container: HTMLElement) {
@@ -88,6 +91,7 @@ export class Viewport {
   private animate(): void {
     this.animationId = requestAnimationFrame(() => this.animate());
     this.controls.update();
+    this.billboardCameraRing();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -138,6 +142,7 @@ export class Viewport {
     }
     this.mesh = null;
     this.faceNormals = faceNormals || null;
+    this.destroyGizmo();
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -157,10 +162,6 @@ export class Viewport {
     this.mesh = new THREE.Mesh(geometry, material);
     this.modelGroup.add(this.mesh);
 
-    // Bake the centroid-centering INTO the geometry so the mesh's local origin
-    // IS its centroid. Then mesh.quaternion rotates the mesh around its centroid
-    // (in-place spin) instead of around an arbitrary corner (orbit). modelGroup
-    // stays at the world origin in X/Z; only Y is lifted to sit on the plate.
     const vertCountLocal = positions.length / 3;
     let cx = 0, cy = 0, cz = 0;
     for (let i = 0; i < vertCountLocal; i++) {
@@ -170,13 +171,12 @@ export class Viewport {
     }
     cx /= vertCountLocal; cy /= vertCountLocal; cz /= vertCountLocal;
     const bake = centroidTranslate({ x: cx, y: cy, z: cz });
+
+    this.boundingRadius = boundingRadius({ x: cx, y: cy, z: cz }, positions);
     geometry.translate(bake.x, bake.y, bake.z);
+    this.modelGroup.position.set(0, this.boundingRadius, 0);
 
-    // Place on the plate for the initial (identity-rotation) display.
     geometry.computeBoundingBox();
-    const minY = geometry.boundingBox!.min.y;
-    this.modelGroup.position.set(0, liftOntoPlate(minY), 0);
-
     const bb = geometry.boundingBox!;
     const size = new THREE.Vector3();
     bb.getSize(size);
@@ -187,25 +187,16 @@ export class Viewport {
     this.controls.target.set(0, 0, 0);
     this.controls.update();
 
-    // Color with initial angles
     if (this.faceNormals) this.colorOverhang();
+
+    this.createGizmo();
+    this.attachPointerHandlers();
   }
 
   showCandidate(quaternion: [number, number, number, number]): void {
     if (!this.mesh) return;
-
-    // The geometry's centroid is baked at the local origin, so this rotates the
-    // mesh around its centroid in-place. Measure the rotated bbox with the group
-    // pinned at the world origin (reset first — stale lift from the previous
-    // candidate would otherwise contaminate the world-space measurement), then
-    // lift Y so the lowest point rests on the plate.
-    this.modelGroup.position.set(0, 0, 0);
     this.mesh.quaternion.set(quaternion[0], quaternion[1], quaternion[2], quaternion[3]);
-
     if (this.faceNormals) this.colorOverhang();
-
-    const bb = new THREE.Box3().setFromObject(this.mesh);
-    this.modelGroup.position.set(0, liftOntoPlate(bb.min.y), 0);
   }
 
   applyYaw(yawDeg: number): void {
@@ -213,11 +204,8 @@ export class Viewport {
     const baseQ = this.mesh.quaternion.clone();
     const yawQ = new THREE.Quaternion();
     yawQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (yawDeg * Math.PI) / 180);
-    this.modelGroup.position.set(0, 0, 0);
     this.mesh.quaternion.copy(yawQ.premultiply(baseQ));
     if (this.faceNormals) this.colorOverhang();
-    const bb = new THREE.Box3().setFromObject(this.mesh);
-    this.modelGroup.position.set(0, liftOntoPlate(bb.min.y), 0);
   }
 
   resetCamera(): void {
@@ -232,74 +220,269 @@ export class Viewport {
     this.controls.update();
   }
 
-  private overlayActive = false;
+  // ─── Gizmo ───────────────────────────────────────────────
+
+  private gizmoGroup: THREE.Group | null = null;
+  private gizmoRingX: THREE.Mesh | null = null;
+  private gizmoRingY: THREE.Mesh | null = null;
+  private gizmoRingZ: THREE.Mesh | null = null;
+  private cameraRing: THREE.Mesh | null = null;
+  private raycaster = new THREE.Raycaster();
+  private hoveredRing: DragMode = null;
+  private ringDefaultOpacities = new Map<THREE.Mesh, number>();
+
+  private makeRing(radius: number, tube: number, color: number, opacity = 0.7): THREE.Mesh {
+    const geometry = new THREE.TorusGeometry(radius, tube, 12, 48);
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    const mesh = new THREE.Mesh(geometry, material);
+    this.ringDefaultOpacities.set(mesh, opacity);
+    return mesh;
+  }
+
+  private createGizmo(): void {
+    this.destroyGizmo();
+    this.gizmoGroup = new THREE.Group();
+    this.gizmoGroup.position.copy(this.modelGroup.position);
+
+    const r = this.boundingRadius * 1.3;
+    const tube = Math.max(r * 0.006, 0.02);
+
+    this.gizmoRingX = this.makeRing(r, tube, 0xff4444);
+    this.gizmoRingX.rotation.y = Math.PI / 2;
+    this.gizmoGroup.add(this.gizmoRingX);
+
+    this.gizmoRingY = this.makeRing(r, tube, 0x44ff44);
+    this.gizmoGroup.add(this.gizmoRingY);
+
+    this.gizmoRingZ = this.makeRing(r, tube, 0x4488ff);
+    this.gizmoRingZ.rotation.x = Math.PI / 2;
+    this.gizmoGroup.add(this.gizmoRingZ);
+
+    // Camera ring — outer, white, always faces camera via billboard
+    const cr = this.boundingRadius * 1.6;
+    const ct = Math.max(cr * 0.004, 0.015);
+    this.cameraRing = this.makeRing(cr, ct, 0xcccccc, 0.35);
+    this.gizmoGroup.add(this.cameraRing);
+
+    this.scene.add(this.gizmoGroup);
+  }
+
+  private destroyGizmo(): void {
+    if (this.gizmoGroup) {
+      this.scene.remove(this.gizmoGroup);
+      this.gizmoGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      });
+      this.gizmoGroup = null;
+    }
+    this.gizmoRingX = null;
+    this.gizmoRingY = null;
+    this.gizmoRingZ = null;
+    this.cameraRing = null;
+    this.ringDefaultOpacities.clear();
+    this.hoveredRing = null;
+  }
+
+  private billboardCameraRing(): void {
+    if (!this.cameraRing || !this.gizmoGroup) return;
+    const worldPos = new THREE.Vector3();
+    this.cameraRing.getWorldPosition(worldPos);
+    const dir = new THREE.Vector3().subVectors(this.camera.position, worldPos).normalize();
+    this.cameraRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  }
+
+  // ─── Pointer Interaction ─────────────────────────────────
+
+  private dragMode: DragMode = null;
   private overlayStartQuat: THREE.Quaternion | null = null;
-  private overlayStartMouse = { x: 0, y: 0 };
+  private dragAxisVec: THREE.Vector3 | null = null;
+  private prevIntersect: THREE.Vector3 | null = null;
+  private cumulativeAngle = 0;
+  private handlersAttached = false;
+
   private onOrientationChange: ((q: [number, number, number, number]) => void) | null = null;
-  private overlayPointerDownHandler: ((e: PointerEvent) => void) | null = null;
-  private overlayPointerMoveHandler: ((e: PointerEvent) => void) | null = null;
-  private overlayPointerUpHandler: ((e: PointerEvent) => void) | null = null;
 
-  enterOverlayMode(container: HTMLElement, onChange: (q: [number, number, number, number]) => void): void {
-    if (!this.mesh) return;
-    this.overlayActive = true;
-    this.onOrientationChange = onChange;
-    this.controls.enabled = false;
+  private getNDC(clientX: number, clientY: number): THREE.Vector2 {
+    const el = this.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+  }
 
+  private intersectRingPlane(clientX: number, clientY: number, axisVec: THREE.Vector3): THREE.Vector3 | null {
+    const mouse = this.getNDC(clientX, clientY);
+    this.raycaster.setFromCamera(mouse, this.camera);
+    const center = new THREE.Vector3(0, this.boundingRadius, 0);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axisVec, center);
+    const pt = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(plane, pt) ? pt : null;
+  }
+
+  private angleAroundAxis(pt: THREE.Vector3, axis: THREE.Vector3): number {
+    const center = new THREE.Vector3(0, this.boundingRadius, 0);
+    const dir = new THREE.Vector3().subVectors(pt, center);
+    const proj = dir.clone().sub(axis.clone().multiplyScalar(dir.dot(axis)));
+    if (proj.lengthSq() < 0.0001) return 0;
+    proj.normalize();
+    const refBase = Math.abs(axis.y) > 0.9 ? new THREE.Vector3(1, 0, 0) :
+                    Math.abs(axis.x) > 0.9 ? new THREE.Vector3(0, 0, 1) :
+                    new THREE.Vector3(1, 0, 0);
+    const ref = refBase.clone().sub(axis.clone().multiplyScalar(refBase.dot(axis)));
+    ref.normalize();
+    return Math.atan2(axis.dot(proj.clone().cross(ref)), proj.dot(ref));
+  }
+
+  private raycastAllRings(clientX: number, clientY: number): DragMode {
+    if (!this.gizmoGroup) return null;
+    const mouse = this.getNDC(clientX, clientY);
+    this.raycaster.setFromCamera(mouse, this.camera);
+
+    const meshes: { mesh: THREE.Mesh; mode: DragMode }[] = [];
+    if (this.gizmoRingX) meshes.push({ mesh: this.gizmoRingX, mode: 'axis-x' });
+    if (this.gizmoRingY) meshes.push({ mesh: this.gizmoRingY, mode: 'axis-y' });
+    if (this.gizmoRingZ) meshes.push({ mesh: this.gizmoRingZ, mode: 'axis-z' });
+    if (this.cameraRing) meshes.push({ mesh: this.cameraRing, mode: 'camera' });
+
+    const hits = this.raycaster.intersectObjects(meshes.map(m => m.mesh));
+    if (hits.length > 0) {
+      for (const m of meshes) {
+        if (hits[0].object === m.mesh) return m.mode;
+      }
+    }
+    return null;
+  }
+
+  private getRingMesh(mode: DragMode): THREE.Mesh | null {
+    switch (mode) {
+      case 'axis-x': return this.gizmoRingX;
+      case 'axis-y': return this.gizmoRingY;
+      case 'axis-z': return this.gizmoRingZ;
+      case 'camera': return this.cameraRing;
+      default: return null;
+    }
+  }
+
+  private attachPointerHandlers(): void {
+    if (this.handlersAttached || !this.mesh) return;
+    this.handlersAttached = true;
     const el = this.renderer.domElement;
 
-    this.overlayPointerDownHandler = (e: PointerEvent) => {
-      this.overlayStartQuat = this.mesh!.quaternion.clone();
-      this.overlayStartMouse = { x: e.clientX, y: e.clientY };
+    const onDown = (e: PointerEvent) => {
+      if (!this.mesh) return;
+      const mode = this.raycastAllRings(e.clientX, e.clientY);
+      if (!mode) return;
+      e.stopPropagation();
+      this.dragMode = mode;
+      this.overlayStartQuat = this.mesh.quaternion.clone();
       el.setPointerCapture(e.pointerId);
+      this.controls.enabled = false;
+
+      let axisVec: THREE.Vector3;
+      if (mode === 'axis-x') {
+        axisVec = new THREE.Vector3(1, 0, 0);
+      } else if (mode === 'axis-y') {
+        axisVec = new THREE.Vector3(0, 0, 1);
+      } else if (mode === 'axis-z') {
+        axisVec = new THREE.Vector3(0, 1, 0);
+      } else {
+        axisVec = new THREE.Vector3();
+        this.camera.getWorldDirection(axisVec);
+        axisVec.normalize();
+      }
+      this.dragAxisVec = axisVec;
+      this.prevIntersect = this.intersectRingPlane(e.clientX, e.clientY, axisVec);
+      this.cumulativeAngle = 0;
     };
 
-    this.overlayPointerMoveHandler = (e: PointerEvent) => {
-      if (!this.overlayStartQuat || !this.mesh) return;
-      const dx = (e.clientX - this.overlayStartMouse.x) * 0.005;
-      const dy = (e.clientY - this.overlayStartMouse.y) * 0.005;
+    const onMove = (e: PointerEvent) => {
+      // ─── Hover highlighting ────────────────────────────
+      if (!this.dragMode && this.mesh) {
+        const mode = this.raycastAllRings(e.clientX, e.clientY);
+        if (mode !== this.hoveredRing) {
+          // Restore previous ring's opacity
+          if (this.hoveredRing) {
+            const prev = this.getRingMesh(this.hoveredRing);
+            if (prev) {
+              const orig = this.ringDefaultOpacities.get(prev) ?? 0.7;
+              (prev.material as THREE.MeshBasicMaterial).opacity = orig;
+            }
+          }
+          // Highlight new ring
+          if (mode) {
+            const ring = this.getRingMesh(mode);
+            if (ring) (ring.material as THREE.MeshBasicMaterial).opacity = 1.0;
+          }
+          this.hoveredRing = mode;
+        }
+        return;
+      }
 
-      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
-      const cameraDir = new THREE.Vector3();
-      this.camera.getWorldDirection(cameraDir);
-      const cameraRight = new THREE.Vector3().crossVectors(cameraDir, cameraUp).normalize();
+      // ─── Drag handling ─────────────────────────────────
+      if (!this.dragMode || !this.overlayStartQuat || !this.mesh) {
+        this.dragMode = null;
+        return;
+      }
+      e.stopPropagation();
 
-      const qx = new THREE.Quaternion().setFromAxisAngle(cameraUp, dx);
-      const qy = new THREE.Quaternion().setFromAxisAngle(cameraRight, dy);
-      const totalQ = qx.multiply(qy);
-      this.mesh.quaternion.copy(totalQ.multiply(this.overlayStartQuat.clone()));
+      if (this.dragAxisVec) {
+        const axis = this.dragAxisVec;
+        const pt = this.intersectRingPlane(e.clientX, e.clientY, axis);
+        if (pt && this.prevIntersect) {
+          const a1 = this.angleAroundAxis(this.prevIntersect, axis);
+          const a2 = this.angleAroundAxis(pt, axis);
+          let delta = a2 - a1;
+          if (delta > Math.PI) delta -= 2 * Math.PI;
+          if (delta < -Math.PI) delta += 2 * Math.PI;
+          if (this.dragMode === 'camera') delta = -delta;
+          this.cumulativeAngle += delta;
+          const rotQ = new THREE.Quaternion().setFromAxisAngle(axis, this.cumulativeAngle);
+          this.mesh.quaternion.copy(rotQ.multiply(this.overlayStartQuat));
+          this.prevIntersect.copy(pt);
+        }
+      }
 
       this.colorOverhang();
-      const bb = new THREE.Box3().setFromObject(this.mesh);
-      this.modelGroup.position.set(0, liftOntoPlate(bb.min.y), 0);
-
       if (this.onOrientationChange) {
         const q = this.mesh.quaternion;
         this.onOrientationChange([q.x, q.y, q.z, q.w]);
       }
     };
 
-    this.overlayPointerUpHandler = () => {
-      this.overlayStartQuat = null;
+    const onUp = (e: PointerEvent) => {
+      this.dragMode = null;
+      this.dragAxisVec = null;
+      this.prevIntersect = null;
+      this.cumulativeAngle = 0;
+      this.controls.enabled = true;
     };
 
-    el.addEventListener('pointerdown', this.overlayPointerDownHandler);
-    el.addEventListener('pointermove', this.overlayPointerMoveHandler);
-    el.addEventListener('pointerup', this.overlayPointerUpHandler);
+    el.addEventListener('pointerdown', onDown, { capture: true });
+    el.addEventListener('pointermove', onMove, { capture: true });
+    el.addEventListener('pointerup', onUp, { capture: true });
+  }
+
+  // ─── Overlay Mode ───────────────────────────────────────
+
+  private overlayActive = false;
+
+  get isOverlayActive(): boolean {
+    return this.overlayActive;
+  }
+
+  enterOverlayMode(onChange: (q: [number, number, number, number]) => void): void {
+    if (!this.mesh) return;
+    this.overlayActive = true;
+    this.onOrientationChange = onChange;
   }
 
   exitOverlayMode(): void {
     this.overlayActive = false;
-    this.controls.enabled = true;
-    const el = this.renderer.domElement;
-    if (this.overlayPointerDownHandler) el.removeEventListener('pointerdown', this.overlayPointerDownHandler);
-    if (this.overlayPointerMoveHandler) el.removeEventListener('pointermove', this.overlayPointerMoveHandler);
-    if (this.overlayPointerUpHandler) el.removeEventListener('pointerup', this.overlayPointerUpHandler);
-    this.overlayPointerDownHandler = null;
-    this.overlayPointerMoveHandler = null;
-    this.overlayPointerUpHandler = null;
     this.onOrientationChange = null;
-    this.overlayStartQuat = null;
   }
 
   getMeshQuaternion(): [number, number, number, number] {
