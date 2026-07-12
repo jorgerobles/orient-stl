@@ -29,3 +29,21 @@ export function centroidTranslate(centroid: Vec3): Vec3 {
 export function liftOntoPlate(rotatedMinY: number): number {
   return rotatedMinY < 0 ? -rotatedMinY : 0;
 }
+
+/**
+ * Max distance from `centroid` to any vertex in `positions`. The result is
+ * the bounding-sphere radius of the mesh around its centroid.
+ * O(n) — iterates once, compares squared distances, one sqrt at the end.
+ * Works correctly before or after baking the centroid into the geometry.
+ */
+export function boundingRadius(centroid: Vec3, positions: Float32Array): number {
+  let maxR2 = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const dx = positions[i] - centroid.x;
+    const dy = positions[i + 1] - centroid.y;
+    const dz = positions[i + 2] - centroid.z;
+    const r2 = dx * dx + dy * dy + dz * dz;
+    if (r2 > maxR2) maxR2 = r2;
+  }
+  return Math.sqrt(maxR2);
+}
