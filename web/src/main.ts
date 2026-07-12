@@ -1,6 +1,7 @@
 import { initWasm, loadSTLBytes, prepareData } from './loadSTL';
 import { Viewport } from './viewport';
 import { exportSTL } from './exportSTL';
+import { rotatePositions } from './rotate';
 import { decimateForScore, nearestCandidateScore } from './compute';
 import { mergeCandidates, rankByConsensus } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
@@ -374,18 +375,6 @@ document.getElementById('export-btn')!.addEventListener('click', () => {
   const qres = quat;
   exportSTL(rotatePositions(positions, qres), stlName, currentIndex + 1);
 });
-
-function rotatePositions(positions: Float32Array, q: [number, number, number, number]): Float32Array {
-  const out = new Float32Array(positions.length);
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-    const qx = q[1] * z - q[2] * y, qy = q[2] * x - q[0] * z, qz = q[0] * y - q[1] * x, qw = -q[1] * x - q[2] * y - q[3] * z;
-    out[i] = x + 2 * (qw * q[1] + qx * q[0] - qy * q[3] + qz * q[2]);
-    out[i + 1] = y + 2 * (qw * q[2] + qy * q[0] - qz * q[1] + qx * q[3]);
-    out[i + 2] = z + 2 * (qw * q[3] + qz * q[0] - qx * q[2] + qy * q[1]);
-  }
-  return out;
-}
 
 function displayResults(cands: Candidate[]): void {
   resultsEl.innerHTML = `<h3>Candidates (${cands.length})</h3><ol>${cands.map((c, i) =>
