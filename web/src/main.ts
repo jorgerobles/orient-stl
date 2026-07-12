@@ -66,7 +66,7 @@ function exitOverlay(): void {
   viewportContainer.classList.remove('overlay-active');
   candidateBar.classList.remove('visible');
   panelLeft.style.display = '';
-  panelRight.style.display = '';
+  panelRight.style.display = 'block';
 
   if (overlayKeyHandler) {
     document.removeEventListener('keydown', overlayKeyHandler);
@@ -165,9 +165,9 @@ async function handleFile(file: File): Promise<void> {
   try {
     const bytes = await loadSTLBytes(file);
     stlName = file.name;
-    await paint();
 
     progressLabel.textContent = 'Parsing STL (WASM)...';
+    await paint();
     const raw = prepareData(bytes, config as unknown as Record<string, unknown>) as unknown as {
       positions: number[]; normals: number[]; areas: number[]; directions: number[];
     };
@@ -185,10 +185,10 @@ async function handleFile(file: File): Promise<void> {
     positions = fullData.positions;
     faceNormals = fullData.normals;
     areas = fullData.areas;
-    await paint();
 
     progressLabel.textContent = 'Rendering model...';
     statusEl.textContent = 'Rendering model...';
+    await paint();
     viewport.loadModel(positions, faceNormals);
     viewport.resetCamera();
     await paint();
