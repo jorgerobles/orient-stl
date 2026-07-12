@@ -12,7 +12,6 @@ let positions: Float32Array | null = null;
 let faceNormals: Float32Array | null = null;
 let areas: Float32Array | null = null;
 let currentIndex = 0;
-let yawOffset = 0;
 let stlName = '';
 let viewport: Viewport;
 let workers: Worker[] = [];
@@ -25,20 +24,18 @@ const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const dropZone = document.getElementById('drop-zone')!;
 const resultsEl = document.getElementById('results')!;
 const viewportContainer = document.getElementById('viewport')!;
-const navEl = document.getElementById('nav-controls')!;
-const yawPanel = document.getElementById('yaw-panel')!;
-const exportBtn = document.getElementById('export-btn') as HTMLButtonElement;
+const candidateBar = document.getElementById('candidate-bar')!;
+const candidateInfoEl = document.getElementById('candidate-info')!;
 const progressContainer = document.getElementById('progress-container')!;
 const progressBar = document.getElementById('progress-bar')!;
 const progressLabel = document.getElementById('progress-label')!;
 const cancelBtn = document.getElementById('cancel-btn')!;
+const panelLeft = document.getElementById('panel-left')!;
+const panelRight = document.getElementById('results')!;
 
 viewport = new Viewport(viewportContainer);
 
 let overlayActive = false;
-let overlayToolbarEl: HTMLElement | null = null;
-let overlayBackdropEl: HTMLElement | null = null;
-let scoreBadgeValueEl: HTMLElement | null = null;
 let overlayKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function enterOverlay(candidateIndex: number): void {
@@ -46,110 +43,19 @@ function enterOverlay(candidateIndex: number): void {
   showCandidate(candidateIndex);
   overlayActive = true;
 
-  document.getElementById('prev-btn')!.style.display = 'none';
-  document.getElementById('next-btn')!.style.display = 'none';
-  document.getElementById('yaw-panel')!.style.display = 'none';
-
+  panelLeft.style.display = 'none';
+  panelRight.style.display = 'none';
   viewportContainer.classList.add('overlay-active');
+  candidateBar.classList.add('visible');
 
-  const backdropEl = document.createElement('div');
-  backdropEl.className = 'overlay-backdrop';
-  viewportContainer.appendChild(backdropEl);
-  overlayBackdropEl = backdropEl;
-
-  const toolbarEl = document.createElement('div');
-  toolbarEl.className = 'overlay-toolbar';
-  toolbarEl.innerHTML = `
-    <span class="label">Overlay Mode</span>
-    <span class="hint">Esc to exit</span>
-    <div class="score-badge">
-      <span class="label">Score</span>
-      <span class="value" id="score-badge-value">${(candidates[candidateIndex].compositeScore * 100).toFixed(0)}%</span>
-    </div>
-    <button id="varita-btn" class="button button-success" style="padding:0.5rem 1.5rem">✨ Varita Mágica</button>
-    <button class="exit-btn" id="overlay-exit-btn">Exit</button>
-  `;
-  viewportContainer.appendChild(toolbarEl);
-  overlayToolbarEl = toolbarEl;
-
-  scoreBadgeValueEl = toolbarEl.querySelector('.value')!;
-  toolbarEl.querySelector('#overlay-exit-btn')!.addEventListener('click', exitOverlay);
-  overlayKeyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') exitOverlay(); };
+  overlayKeyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') exitOverlay();
+    if (e.key === 'ArrowLeft' && currentIndex > 0) showCandidate(currentIndex - 1);
+    if (e.key === 'ArrowRight' && currentIndex < candidates.length - 1) showCandidate(currentIndex + 1);
+  };
   document.addEventListener('keydown', overlayKeyHandler);
 
-  // Wire varita button
-  const varitaBtn = toolbarEl.querySelector('#varita-btn') as HTMLButtonElement;
-  varitaBtn.addEventListener('click', async () => {
-    if (!positions || !faceNormals || !areas || candidates.length === 0 || !overlayActive) return;
-
-    varitaBtn.disabled = true;
-    varitaBtn.textContent = 'Refining...';
-    if (scoreBadgeValueEl) scoreBadgeValueEl.textContent = 'Refining...';
-
-    try {
-      const q = viewport.getMeshQuaternion();
-      const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
-      const dir = (() => {
-        const [w, x, y, z] = invQ;
-        const v: [number, number, number] = [0, -1, 0];
-        const uv_x = y * v[2] - z * v[1];
-        const uv_y = z * v[0] - x * v[2];
-        const uv_z = x * v[1] - y * v[0];
-        const uuv_x = y * uv_z - z * uv_y;
-        const uuv_y = z * uv_x - x * uv_z;
-        const uuv_z = x * uv_y - y * uv_x;
-        return [
-          v[0] + 2.0 * (w * uv_x + uuv_x),
-          v[1] + 2.0 * (w * uv_y + uuv_y),
-          v[2] + 2.0 * (w * uv_z + uuv_z),
-        ] as [number, number, number];
-      })();
-
-      const wasmModule = await import('../pkg/orient_core.js');
-
-      const result = (wasmModule as any).refine_orientation(
-        positions, faceNormals, areas,
-        dir[0], dir[1], dir[2],
-        config.criticalAngleDeg,
-        50,
-      );
-
-      const refinedDir: [number, number, number] = [result[0], result[1], result[2]];
-      // Compute quaternion aligning refined direction to -Y
-      const THREE = await import('three');
-      const newQuat = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(refinedDir[0], refinedDir[1], refinedDir[2]),
-        new THREE.Vector3(0, -1, 0)
-      );
-      viewport.showCandidate([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
-
-      const nearest = nearestCandidateScore([newQuat.x, newQuat.y, newQuat.z, newQuat.w], candidates);
-      if (scoreBadgeValueEl) {
-        scoreBadgeValueEl.textContent = `${(nearest.score * 100).toFixed(0)}%`;
-      }
-    } catch (err) {
-      console.error('Hill-climb failed:', err);
-      if (scoreBadgeValueEl && candidates[currentIndex]) {
-        const badge = scoreBadgeValueEl;
-        badge.textContent = 'Error';
-        const restoreIdx = currentIndex;
-        setTimeout(() => {
-          const sc = candidates[restoreIdx]?.compositeScore ?? 0;
-          badge.textContent = `${(sc * 100).toFixed(0)}%`;
-        }, 3000);
-      }
-    }
-
-    varitaBtn.textContent = '✨ Varita Mágica';
-    varitaBtn.disabled = false;
-  });
-
-  viewport.enterOverlayMode(viewportContainer, (q) => {
-    const nearest = nearestCandidateScore(q, candidates);
-    if (scoreBadgeValueEl) {
-      scoreBadgeValueEl.textContent = `${(nearest.score * 100).toFixed(0)}%`;
-    }
-  });
+  viewport.enterOverlayMode(updateLiveScore);
 }
 
 function exitOverlay(): void {
@@ -158,19 +64,81 @@ function exitOverlay(): void {
   viewport.exitOverlayMode();
 
   viewportContainer.classList.remove('overlay-active');
-  if (overlayBackdropEl) { overlayBackdropEl.remove(); overlayBackdropEl = null; }
-  if (overlayToolbarEl) { overlayToolbarEl.remove(); overlayToolbarEl = null; }
-  scoreBadgeValueEl = null;
-
-  document.getElementById('prev-btn')!.style.display = '';
-  document.getElementById('next-btn')!.style.display = '';
-  document.getElementById('yaw-panel')!.style.display = 'block';
+  candidateBar.classList.remove('visible');
+  panelLeft.style.display = '';
+  panelRight.style.display = '';
 
   if (overlayKeyHandler) {
     document.removeEventListener('keydown', overlayKeyHandler);
     overlayKeyHandler = null;
   }
 }
+
+function updateLiveScore(q: [number, number, number, number]): void {
+  const nearest = nearestCandidateScore(q, candidates);
+  candidateInfoEl.innerHTML =
+    `<span class="score">${(nearest.score * 100).toFixed(0)}%</span>`;
+}
+
+document.getElementById('varita-btn')!.addEventListener('click', async () => {
+  if (!positions || !faceNormals || !areas || candidates.length === 0 || !overlayActive) return;
+
+  const varitaBtn = document.getElementById('varita-btn') as HTMLButtonElement;
+  varitaBtn.disabled = true;
+  varitaBtn.textContent = 'Refining...';
+  candidateInfoEl.innerHTML = `<span class="score" style="font-size:0.9rem;color:#888">Refining...</span>`;
+
+  try {
+    const q = viewport.getMeshQuaternion();
+    const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
+    const dir = (() => {
+      const [w, x, y, z] = invQ;
+      const v: [number, number, number] = [0, -1, 0];
+      const uv_x = y * v[2] - z * v[1];
+      const uv_y = z * v[0] - x * v[2];
+      const uv_z = x * v[1] - y * v[0];
+      const uuv_x = y * uv_z - z * uv_y;
+      const uuv_y = z * uv_x - x * uv_z;
+      const uuv_z = x * uv_y - y * uv_x;
+      return [
+        v[0] + 2.0 * (w * uv_x + uuv_x),
+        v[1] + 2.0 * (w * uv_y + uuv_y),
+        v[2] + 2.0 * (w * uv_z + uuv_z),
+      ] as [number, number, number];
+    })();
+
+    const wasmModule = await import('../pkg/orient_core.js');
+    const result = (wasmModule as any).refine_orientation(
+      positions, faceNormals, areas,
+      dir[0], dir[1], dir[2],
+      config.criticalAngleDeg, 50,
+    );
+
+    const refinedDir: [number, number, number] = [result[0], result[1], result[2]];
+    const THREE = await import('three');
+    const newQuat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(refinedDir[0], refinedDir[1], refinedDir[2]),
+      new THREE.Vector3(0, -1, 0),
+    );
+    viewport.showCandidate([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
+    updateLiveScore([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
+  } catch (err) {
+    console.error('Hill-climb failed:', err);
+    candidateInfoEl.innerHTML = `<span class="score" style="color:#e74c3c">Error</span>`;
+  }
+
+  varitaBtn.textContent = '✨ Varita';
+  varitaBtn.disabled = false;
+});
+
+document.getElementById('exit-btn')!.addEventListener('click', exitOverlay);
+document.getElementById('reset-btn')!.addEventListener('click', () => {
+  if (candidates.length === 0) return;
+  viewport.showCandidate(candidates[currentIndex].quaternion);
+  updateCandidateBar();
+});
+document.getElementById('prev-btn')!.addEventListener('click', () => { if (currentIndex > 0) showCandidate(currentIndex - 1); });
+document.getElementById('next-btn')!.addEventListener('click', () => { if (currentIndex < candidates.length - 1) showCandidate(currentIndex + 1); });
 
 async function boot(): Promise<void> {
   statusEl.textContent = 'Initializing WASM...';
@@ -197,7 +165,6 @@ async function handleFile(file: File): Promise<void> {
   try {
     const bytes = await loadSTLBytes(file);
     stlName = file.name;
-
     await paint();
 
     progressLabel.textContent = 'Parsing STL (WASM)...';
@@ -218,16 +185,12 @@ async function handleFile(file: File): Promise<void> {
     positions = fullData.positions;
     faceNormals = fullData.normals;
     areas = fullData.areas;
-
     await paint();
 
     progressLabel.textContent = 'Rendering model...';
     statusEl.textContent = 'Rendering model...';
     viewport.loadModel(positions, faceNormals);
     viewport.resetCamera();
-    navEl.style.display = 'flex';
-    document.getElementById('candidate-info')!.textContent = 'Computing candidates...';
-
     await paint();
 
     spawnCompute(fullData);
@@ -251,9 +214,7 @@ async function spawnCompute(data: OriData): Promise<void> {
   progressContainer.style.display = 'block';
   progressBar.className = 'progress-bar-fill indeterminate';
   progressLabel.textContent = 'Decimating mesh...';
-  yawPanel.style.display = 'none';
-  exportBtn.style.display = 'none';
-  resultsEl.innerHTML = '';
+  panelRight.style.display = 'none';
   candidates = [];
 
   const computeConfig: ComputeConfig = {
@@ -266,12 +227,11 @@ async function spawnCompute(data: OriData): Promise<void> {
   const decimated = decimateForScore(data, 12000);
   progressLabel.textContent = 'Computing candidates...';
 
-  // Build segmented progress bar
   const numDirs = decimated.directions.length / 3;
   const numWorkers = workerCount();
   const dirsPerWorker = Math.ceil(numDirs / numWorkers);
   progressBar.className = 'progress-segments';
-  progressBar.style.width = '';  // clear HTML inline width: 0% so CSS width:100% takes effect
+  progressBar.style.width = '';
   progressBar.innerHTML = '';
   const segFills: HTMLDivElement[] = [];
   for (let i = 0; i < numWorkers; i++) {
@@ -293,13 +253,9 @@ async function spawnCompute(data: OriData): Promise<void> {
     if (merged.length > 0) {
       candidates = merged;
       currentIndex = 0;
-      yawOffset = 0;
       viewport.setCriticalAngle(config.criticalAngleDeg);
       viewport.showCandidate(merged[0].quaternion);
-      navEl.style.display = 'flex';
-      yawPanel.style.display = 'block';
-      exportBtn.style.display = 'inline-block';
-      updateNavInfo();
+      panelRight.style.display = 'block';
       displayResults(merged);
     }
   }
@@ -325,9 +281,7 @@ async function spawnCompute(data: OriData): Promise<void> {
           segFills[workerIdx].style.width = '100%';
           progressBar.children[workerIdx]?.classList.add('done');
           mergeAndShow();
-          if (completedWorkers >= numWorkers) {
-            finishCompute();
-          }
+          if (completedWorkers >= numWorkers) finishCompute();
           break;
         }
       }
@@ -347,27 +301,16 @@ function finishCompute(): void {
   progressContainer.style.display = 'none';
   workers = [];
 
-  const computeConfig: ComputeConfig = {
-    criticalAngleDeg: config.criticalAngleDeg,
-    excludeUnstable: config.excludeUnstable,
-    maxCandidates: config.maxCandidates,
-  };
-
-  // Read allSlices via stored candidates — already set by mergeAndShow
   if (candidates.length === 0) {
     statusEl.textContent = 'No candidates generated';
     return;
   }
   candidates = applyCurrentRank(candidates);
-  statusEl.textContent = `${candidates.length} candidates found`;
+  statusEl.textContent = `${candidates.length} candidates — click one to inspect`;
   currentIndex = 0;
-  yawOffset = 0;
   viewport.setCriticalAngle(config.criticalAngleDeg);
   viewport.showCandidate(candidates[0].quaternion);
-  navEl.style.display = 'flex';
-  yawPanel.style.display = 'block';
-  exportBtn.style.display = 'inline-block';
-  updateNavInfo();
+  panelRight.style.display = 'block';
   displayResults(candidates);
 }
 
@@ -382,26 +325,22 @@ cancelBtn.addEventListener('click', cancelCompute);
 function showCandidate(index: number): void {
   if (index < 0 || index >= candidates.length) return;
   currentIndex = index;
-  yawOffset = 0;
   viewport.setCriticalAngle(config.criticalAngleDeg);
   viewport.showCandidate(candidates[index].quaternion);
-  updateYawDisplay();
-  updateNavInfo();
+  updateCandidateBar();
   displayResults(candidates);
 }
 
-function updateNavInfo(): void {
+function updateCandidateBar(): void {
   const c = candidates[currentIndex];
-  document.getElementById('candidate-info')!.innerHTML =
-    `<strong>#${currentIndex + 1}/${candidates.length}</strong> — ${(c.compositeScore * 100).toFixed(0)}%` +
-    `${currentIndex === 0 ? ' ★ BEST' : ''}`;
-}
-
-function updateYawDisplay(): void {
-  const slider = document.getElementById('yaw-slider') as HTMLInputElement;
-  const val = document.getElementById('yaw-value')!;
-  slider.value = '0';
-  val.textContent = '0°';
+  const prevBtn = document.getElementById('prev-btn') as HTMLButtonElement;
+  const nextBtn = document.getElementById('next-btn') as HTMLButtonElement;
+  prevBtn.disabled = currentIndex <= 0;
+  nextBtn.disabled = currentIndex >= candidates.length - 1;
+  candidateInfoEl.innerHTML =
+    `<span style="color:#888;font-size:0.8rem">#${currentIndex + 1}/${candidates.length}</span>` +
+    `<span class="score">${(c.compositeScore * 100).toFixed(0)}%</span>` +
+    `${currentIndex === 0 ? '<span class="best">★ BEST</span>' : ''}`;
 }
 
 const angleSlider = document.getElementById('angle-slider') as HTMLInputElement;
@@ -411,16 +350,6 @@ angleSlider.addEventListener('input', () => {
   angleValue.textContent = angleSlider.value;
   viewport.setCriticalAngle(config.criticalAngleDeg);
 });
-
-function rerank(): void {
-  if (candidates.length === 0) return;
-  candidates = rankByConsensus(candidates);
-  currentIndex = 0;
-  yawOffset = 0;
-  viewport.showCandidate(candidates[0].quaternion);
-  updateNavInfo();
-  displayResults(candidates);
-}
 
 const hullSphereToggle = document.getElementById('hull-sphere-toggle') as HTMLInputElement;
 hullSphereToggle.addEventListener('change', () => {
@@ -438,50 +367,13 @@ dropZone.addEventListener('drop', (e) => {
   if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
 });
 
-document.getElementById('prev-btn')!.addEventListener('click', () => { if (currentIndex > 0) showCandidate(currentIndex - 1); });
-document.getElementById('next-btn')!.addEventListener('click', () => { if (currentIndex < candidates.length - 1) showCandidate(currentIndex + 1); });
-
-const yawSlider = document.getElementById('yaw-slider') as HTMLInputElement;
-const yawValue = document.getElementById('yaw-value')!;
-yawSlider.addEventListener('input', () => {
-  yawValue.textContent = `${parseFloat(yawSlider.value)}°`;
-});
-yawSlider.addEventListener('change', () => {
-  yawOffset = parseFloat(yawSlider.value);
-  viewport.applyYaw(yawOffset);
-});
-document.getElementById('yaw-reset-btn')!.addEventListener('click', () => {
-  yawOffset = 0; yawSlider.value = '0'; yawValue.textContent = '0°';
-  viewport.showCandidate(candidates[currentIndex].quaternion);
-});
-document.getElementById('snap-btn')!.addEventListener('click', () => {
-  const snaps = [0, 45, 90, 135, 180, 225, 270, 315];
-  let closest = snaps[0], minDiff = Math.abs(yawOffset - closest);
-  for (const a of snaps) { const d = Math.abs(yawOffset - a); if (d < minDiff) { minDiff = d; closest = a; } }
-  yawOffset = closest;
-  (document.getElementById('yaw-slider') as HTMLInputElement).value = String(closest);
-  yawValue.textContent = `${closest}°`;
-  viewport.applyYaw(closest);
-});
-
-exportBtn.addEventListener('click', () => {
+document.getElementById('export-btn')!.addEventListener('click', () => {
   if (!positions || candidates.length === 0) return;
   const c = candidates[currentIndex];
   const quat: [number, number, number, number] = [c.quaternion[0], c.quaternion[1], c.quaternion[2], c.quaternion[3]];
-  const yawRad = (yawOffset * Math.PI) / 180;
-  const qyaw: [number, number, number, number] = [Math.cos(yawRad / 2), 0, Math.sin(yawRad / 2), 0];
-  const qres = multiplyQuats(qyaw, quat);
+  const qres = quat;
   exportSTL(rotatePositions(positions, qres), stlName, currentIndex + 1);
 });
-
-function multiplyQuats(a: [number, number, number, number], b: [number, number, number, number]): [number, number, number, number] {
-  return [
-    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
-    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
-    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
-    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
-  ];
-}
 
 function rotatePositions(positions: Float32Array, q: [number, number, number, number]): Float32Array {
   const out = new Float32Array(positions.length);
@@ -496,13 +388,12 @@ function rotatePositions(positions: Float32Array, q: [number, number, number, nu
 }
 
 function displayResults(cands: Candidate[]): void {
-  resultsEl.innerHTML = `<h3>Candidates (${cands.length}) — #1 = best ↓</h3><ol>${cands.map((c, i) =>
+  resultsEl.innerHTML = `<h3>Candidates (${cands.length})</h3><ol>${cands.map((c, i) =>
     `<li class="${i === currentIndex ? 'active' : ''}" data-index="${i}">#${i + 1} — ${(c.compositeScore * 100).toFixed(0)}%` +
     `<span class="info-icon" title="o: ${c.overhangPenalty.toFixed(0)} f: ${c.footprint.toFixed(0)} x: ${c.maxCross.toFixed(0)} s: ${(c.shadowed * 100).toFixed(0)}% · H: ${c.estHeight.toFixed(1)}mm · ${c.stability}">ⓘ</span></li>`
   ).join('')}</ol>`;
 }
 
-// Click on candidate list items to enter overlay mode
 resultsEl.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest('li');
   if (!li || !li.dataset.index) return;
