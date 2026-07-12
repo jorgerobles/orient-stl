@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { centroidTranslate, liftOntoPlate } from "./centering";
+import { centroidTranslate, liftOntoPlate, boundingRadius } from "./centering";
 
 /**
  * Tests for the centroid-bake approach to candidate centering.
@@ -45,6 +45,28 @@ describe("centroidTranslate", () => {
       expect(c.y + o.y).toBeCloseTo(0, 6);
       expect(c.z + o.z).toBeCloseTo(0, 6);
     }
+  });
+});
+
+describe("boundingRadius", () => {
+  it("returns the max distance from centroid to any vertex", () => {
+    const positions = new Float32Array([3, 4, 0, 0, 0, 0]);
+    const centroid = { x: 1.5, y: 2, z: 0 };
+    expect(boundingRadius(centroid, positions)).toBeCloseTo(2.5, 5);
+  });
+
+  it("handles centroid at the origin", () => {
+    const positions = new Float32Array([0, 5, 0, 3, 0, 4, 0, 0, 0]);
+    expect(boundingRadius({ x: 0, y: 0, z: 0 }, positions)).toBeCloseTo(5, 5);
+  });
+
+  it("returns 0 for a single point at the centroid", () => {
+    const positions = new Float32Array([2, 3, 4]);
+    expect(boundingRadius({ x: 2, y: 3, z: 4 }, positions)).toBe(0);
+  });
+
+  it("returns 0 for empty positions", () => {
+    expect(boundingRadius({ x: 0, y: 0, z: 0 }, new Float32Array(0))).toBe(0);
   });
 });
 
