@@ -662,8 +662,8 @@ export function rankByConsensus(candidates: Candidate[]): Candidate[] {
     return vals.map(v => (v - lo) / span);
   };
   const hN = norm(candidates.map(c => c.estHeight));
-  const oRaw = norm(candidates.map(c => c.overhangPenalty));
-  const oN = oRaw.map((v, i) => v * (1 + hN[i] * 0.5));
+  const oWeighted = candidates.map((c, i) => c.overhangPenalty * (1 + hN[i] * 0.5));
+  const oN = norm(oWeighted);
   const fN = norm(candidates.map(c => c.footprint));
   const cN = norm(candidates.map(c => c.maxCross));
   const sN = norm(candidates.map(c => c.shadowed));
