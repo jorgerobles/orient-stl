@@ -14,7 +14,7 @@
 ///
 /// Returns indices into the original direction/metric arrays that pass the
 /// diversity filter, capped at `max_candidates`.
-pub(crate) fn merge_candidates(
+pub fn merge_candidates(
     scored: &[(usize, f32)],
     directions: &[[f32; 3]],
     stable_flags: &[bool],

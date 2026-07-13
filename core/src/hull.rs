@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 const EPS: f32 = 1e-6;
 
-pub(crate) struct ConvexHull {
+pub struct ConvexHull {
     pub face_normals: Vec<[f32; 3]>,
 }
 
@@ -12,7 +12,7 @@ struct Face {
     normal: [f32; 3],
 }
 
-pub(crate) fn compute_hull(vertices: &[[f32; 3]]) -> ConvexHull {
+pub fn compute_hull(vertices: &[[f32; 3]]) -> ConvexHull {
     let n = vertices.len();
     if n < 4 {
         return ConvexHull { face_normals: Vec::new() };

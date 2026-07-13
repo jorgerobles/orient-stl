@@ -6,7 +6,7 @@
 /// Each returns `Vec<(usize, f32)>` — (original_index, composite_score) sorted.
 
 /// Per-metric configurable weights.
-pub(crate) struct ScoreWeights {
+pub struct ScoreWeights {
     pub w_overhang: f32,
     pub w_footprint: f32,
     pub w_cross: f32,
@@ -19,7 +19,7 @@ pub(crate) struct ScoreWeights {
 /// - `overhang`, `footprint`, `max_cross`, `height` are cost metrics (lower=better)
 /// - `surface` is a BENEFIT metric (higher=better) — inverted to cost form internally
 /// - `shadowed` is a cost metric used by consensus ranking as a 6th term
-pub(crate) struct CandidateMetrics {
+pub struct CandidateMetrics {
     pub overhang: f32,
     pub footprint: f32,
     pub max_cross: f32,
@@ -30,7 +30,7 @@ pub(crate) struct CandidateMetrics {
 
 /// Weighted-sum ranking: min-max normalize each column, apply weights,
 /// sort ascending by composite score (lower = better).
-pub(crate) fn rank_by_weights(
+pub fn rank_by_weights(
     metrics: &[CandidateMetrics],
     w: &ScoreWeights,
 ) -> Vec<(usize, f32)> {
@@ -95,7 +95,7 @@ pub(crate) fn rank_by_weights(
 
 /// Consensus (minimax) ranking: 1 − max(normalized costs) including shadowed
 /// as a 6th term. Higher composite = better. Sort descending.
-pub(crate) fn rank_by_consensus(metrics: &[CandidateMetrics]) -> Vec<(usize, f32)> {
+pub fn rank_by_consensus(metrics: &[CandidateMetrics]) -> Vec<(usize, f32)> {
     let n = metrics.len();
     if n == 0 {
         return vec![];
@@ -145,7 +145,7 @@ pub(crate) fn rank_by_consensus(metrics: &[CandidateMetrics]) -> Vec<(usize, f32
 /// TOPSIS MCDA ranking: vector-normalize, apply weights, compute Euclidean
 /// distance to ideal-best/worst, rank by closeness C_i = S-/(S+ + S-).
 /// Higher closeness = better. Sort descending.
-pub(crate) fn rank_by_topsis(
+pub fn rank_by_topsis(
     metrics: &[CandidateMetrics],
     w: &ScoreWeights,
 ) -> Vec<(usize, f32)> {

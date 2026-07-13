@@ -1,14 +1,14 @@
-mod stl;
-mod mesh;
-mod hull;
-mod candidates;
-mod scoring;
-mod stability;
-mod decimate;
-mod rng;
-mod ranking;
-mod selection;
-mod yaw;
+pub mod stl;
+pub mod mesh;
+pub mod hull;
+pub mod candidates;
+pub mod scoring;
+pub mod stability;
+pub mod decimate;
+pub mod rng;
+pub mod ranking;
+pub mod selection;
+pub mod yaw;
 #[cfg(test)]
 mod harness;
 
@@ -45,11 +45,11 @@ fn default_exclude_unstable() -> bool { true }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OriData {
-    positions: Vec<f32>,
-    normals: Vec<f32>,
-    areas: Vec<f32>,
-    directions: Vec<f32>,
+pub struct OriData {
+    pub positions: Vec<f32>,
+    pub normals: Vec<f32>,
+    pub areas: Vec<f32>,
+    pub directions: Vec<f32>,
 }
 
 /// Ungated native entry point. Parses STL bytes, precomputes mesh, computes
@@ -389,7 +389,7 @@ pub fn select_diverse(
     result.into_iter().map(|i| i as f32).collect()
 }
 
-fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::MeshData {
+pub fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::MeshData {
     let tri_count = normals.len() / 3;
     let normals_vec: Vec<[f32; 3]> = normals.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
     let areas_vec: Vec<f32> = areas.to_vec();
@@ -402,7 +402,7 @@ fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::
     }
 }
 
-fn normalise_dir(d: [f32; 3]) -> ([f32; 3], f32) {
+pub fn normalise_dir(d: [f32; 3]) -> ([f32; 3], f32) {
     let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
     if len > 0.0 {
         ([d[0] / len, d[1] / len, d[2] / len], len)
@@ -413,7 +413,7 @@ fn normalise_dir(d: [f32; 3]) -> ([f32; 3], f32) {
 
 /// Single hill-climb run. Deterministic given the same `rng` state. Returns
 /// the refined direction and its overhang score (lower = better).
-fn refine_once(
+pub fn refine_once(
     mesh: &mesh::MeshData,
     start_dir: &[f32; 3],
     critical_angle_deg: f32,

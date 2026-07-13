@@ -6,6 +6,11 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "orient"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 stl_io = "0.11"

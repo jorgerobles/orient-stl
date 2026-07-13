@@ -1,13 +1,13 @@
 use crate::mesh::MeshData;
 use crate::hull::ConvexHull;
 
-pub(crate) struct StabilityResult {
+pub struct StabilityResult {
     pub stable: bool,
     pub margin: f32,
     pub contact_area: f32,
 }
 
-pub(crate) fn check_stability(
+pub fn check_stability(
     direction: &[f32; 3],
     mesh: &MeshData,
     hull: &ConvexHull,
