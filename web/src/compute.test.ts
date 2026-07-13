@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { footprintArea, maxCrossSection, shadowedOverhangFraction, misalignmentScore, rankByWeights, rankByConsensus, rankByTopsis } from "./compute";
-import type { Candidate } from "./compute";
+import { footprintArea, maxCrossSection, shadowedOverhangFraction, misalignmentScore, rankByWeights, rankByConsensus, rankByTopsis, computeSlice } from "./compute";
+import type { Candidate, OriData, ComputeConfig, RefineFn } from "./compute";
 import { loadProfiles } from "./profiles";
 
 // Unit square in XY plane: two triangles, normal +Z, total area 1.0.
@@ -367,5 +367,64 @@ describe("rankByTopsis", () => {
     const snap = cs.map(c => c.compositeScore);
     rankByTopsis(cs, { wOverhang: 1, wFootprint: 0, wCross: 0, wSurface: 0, wHeight: 0 });
     expect(cs.map(c => c.compositeScore)).toEqual(snap);
+  });
+});
+
+describe("computeSlice batch refine", () => {
+  function unitSquareOriData(): OriData {
+    return {
+      positions: new Float32Array([
+        0, 0, 0, 1, 0, 0, 1, 1, 0,
+        0, 0, 0, 1, 1, 0, 0, 1, 0,
+      ]),
+      normals: new Float32Array([0, 0, 1, 0, 0, 1]),
+      areas: new Float32Array([0.5, 0.5]),
+      directions: new Float32Array([0, 0, 1, 0, 0, -1]),
+    };
+  }
+
+  const config: ComputeConfig = {
+    criticalAngleDeg: 30,
+    excludeUnstable: false,
+    maxCandidates: 10,
+  };
+
+  // Mock refineFn returning K=4 runs with scores [0.05, 0.08, 0.06, 0.05]
+  const mockRefine: RefineFn = (_dir, _pos, _norms, _areas, _angle) => {
+    return [0, 0, -1, 0.05, 0, 0, -1, 0.08, 0, 0, -1, 0.06, 0, 0, -1, 0.05];
+  };
+
+  it("with refineFn: refinedOverhang = min of K scores", () => {
+    const data = unitSquareOriData();
+    const results = computeSlice(data, config, 0, 1, undefined, mockRefine);
+    expect(results.length).toBe(1);
+    // min(0.05, 0.08, 0.06, 0.05) = 0.05
+    expect(results[0].refinedOverhang).toBeCloseTo(0.05, 5);
+  });
+
+  it("with refineFn: refineVariance = population stddev of K scores", () => {
+    const data = unitSquareOriData();
+    const results = computeSlice(data, config, 0, 1, undefined, mockRefine);
+    // scores = [0.05, 0.08, 0.06, 0.05], mean = 0.06
+    // variance = ((0.05-0.06)^2 + (0.08-0.06)^2 + (0.06-0.06)^2 + (0.05-0.06)^2) / 4
+    //          = (0.0001 + 0.0004 + 0 + 0.0001) / 4 = 0.00015
+    // stddev = sqrt(0.00015) ≈ 0.012247
+    expect(results[0].refineVariance).toBeCloseTo(Math.sqrt(0.00015), 5);
+  });
+
+  it("without refineFn: refinedOverhang = raw penalty, refineVariance = 0", () => {
+    const data = unitSquareOriData();
+    const results = computeSlice(data, config, 0, 1, undefined, undefined);
+    expect(results[0].refinedOverhang).toBe(results[0].penalty);
+    expect(results[0].refineVariance).toBe(0);
+  });
+
+  it("SliceResult carries refinedOverhang and refineVariance fields", () => {
+    const data = unitSquareOriData();
+    const results = computeSlice(data, config, 0, 1, undefined, mockRefine);
+    expect(results[0]).toHaveProperty("refinedOverhang");
+    expect(results[0]).toHaveProperty("refineVariance");
+    expect(typeof results[0].refinedOverhang).toBe("number");
+    expect(typeof results[0].refineVariance).toBe("number");
   });
 });
