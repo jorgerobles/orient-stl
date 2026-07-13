@@ -249,3 +249,80 @@ roughly a day of work (QW1 + QW2). H3 (gradient) is a natural follow-on once H2 
 - Domain reasoning from SLA failure physics (peel force ∝ cross-section is standard
   resin-printing knowledge; see Formlabs "Ultimate Guide to SLA" referenced in the
   Wikipedia article).
+
+---
+
+## Implementation update (2026-07-13 — Phase 3.5 backfill)
+
+The original catalog above (H1–H10) was a pre-implementation research survey.
+Once code landed, the implementation adopted its own H-numbers for the
+*numbered scoring heuristics* (stability is a binary reject, not numbered in
+code). This created two numbering collisions and one gap, reconciled here.
+
+### Numbering reconciliation
+
+| Research catalog | Code symbol | Status |
+|-----------------|-------------|--------|
+| H1 Overhang area | `scoreCandidate` / `score_candidate` | ✅ implemented |
+| H2 Max cross-section | `maxCrossSection` / `max_cross_section` | ✅ implemented |
+| H3 Cross-section gradient | — | not implemented |
+| H4 Footprint | `footprintArea` / `footprint_area` | ✅ implemented |
+| H5 Stability (catalog) | `checkStability` / `check_stability` | ✅ implemented (binary reject, no H-number in code) |
+| H6 Print height (catalog) | `computeHeight` / `min_z_height` | ✅ implemented (code reuses H6 — consistent) |
+| H7 Suction-cup | — | superseded by H11 (shadowed-overhang, cheaper proxy) |
+| H8 Support volume | — | not implemented |
+| H9 Island detection | — | not implemented |
+| H10 Cosmetic faces | — | not implemented (needs UI) |
+
+### Post-catalog additions (numbered in code, not in original survey)
+
+**H11 — Shadowed-overhang fraction** (added Phase 2/3, not in original catalog)
+- **Measures:** fraction of overhang area whose downward path to the build plate
+  is blocked by other mesh geometry (2.5-D height field). Proxy for the
+  suction-cup / trapped-resin failure that H7 tried to capture, but far cheaper
+  (no adjacency graph — just a rasterized height grid).
+- **Why it replaced H7:** H7 needs triangle adjacency + region growing (Tier M–E);
+  H11's height-field raster is Tier C (O(N) + grid) and catches the same
+  dominant failure: a ceiling face shadowed by a floor below it.
+- **Code:** `shadowedOverhangFraction` (compute.ts) / `shadowed_overhang_fraction` (scoring.rs).
+  Minimised over 8 yaw samples (`minShadowedOverhang`) because the projection
+  basis rotates with yaw.
+
+**H5 (code) — Surface quality / axis-misalignment** (added Phase 3.5)
+- **Measures:** `area × (|n·dn| + |n·e1| + |n·e2|)` — the L1 norm of each face
+  normal in the orientation frame. HIGHER = better.
+- **Origin:** direct port of PrusaSlicer's `get_misalginment_score`
+  (Rotfinder.cpp:88), the "Best surface quality" method. PrusaSlicer maximises
+  this to discourage big flat axis-aligned shelves/walls that print poorly.
+- **Note on the H5 collision:** the research catalog used H5 for stability; the
+  implementation reused H5 for surface-quality because stability is a binary
+  gate (`checkStability`), not a numbered scoring term. Going forward, code
+  H-numbers are authoritative; the research catalog's H5 (stability) is
+  referenced only by the symbol `checkStability`.
+- **Why it matters for resin:** axis-aligned flat shelves parallel to the build
+  plate cause sticking/cure issues and visible layer shelves; the L1-norm reward
+  is a cheap proxy for "no big flat horizontal surfaces."
+- **Cost:** Tier C — O(N), three dot products + abs + mul per triangle.
+- **Code:** `misalignmentScore` (compute.ts) / `misalignment_score` (scoring.rs).
+
+### Updated cost summary (post-Phase 3.5)
+
+| ID (code) | Heuristic | Tier | Implemented? | Resin relevance |
+|-----------|-----------|------|--------------|-----------------|
+| H1 | Overhang area | C | ✅ | Medium (FDM-flavored) |
+| H2 | Max cross-section | C | ✅ | **High — dominant** |
+| H4 | Footprint / shadow | C | ✅ | High (H2 proxy on convex) |
+| H5 | Surface quality (misalignment) | C | ✅ Phase 3.5 | Medium (finish) |
+| H6 | Print height | C | ✅ Phase 3.5 (promoted to ranked metric) | Medium |
+| H11 | Shadowed-overhang fraction | C | ✅ | **High (suction proxy)** |
+| (gate) | Stability | M | ✅ | High (binary reject) |
+
+### PrusaSlicer comparison source
+
+The H5/H6 additions were motivated by a codegraph exploration of PrusaSlicer's
+auto-orientation (`resources/PrusaSlicer/src/libslic3r/SLA/Rotfinder.cpp`,
+indexed via codegraph). The full comparison table and heuristic analysis are
+recorded in `.planning/phases/03.5-scoring-expansion/03.5-scoring-expansion-CONTEXT.md`.
+PrusaSlicer exposes three single-objective methods (Best surface quality,
+Reduced overhang slopes, Lowest Z height); orient-stl instead folds all
+heuristics into one weighted composite so the user can tune per use case.
