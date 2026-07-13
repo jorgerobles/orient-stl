@@ -27,7 +27,7 @@ self.onmessage = async (e: MessageEvent) => {
       wasm.refine_orientation_batch(
         positions, normals, areas,
         dir[0], dir[1], dir[2],
-        criticalAngleDeg, 50, 4, 0,
+        criticalAngleDeg, config.refineIterations ?? 0, 4, 0,
       ) as number[];
   }
   const results = computeSlice(data, config, dirStart, dirCount, (pct: number) => {
