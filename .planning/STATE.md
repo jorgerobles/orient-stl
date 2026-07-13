@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-07-13T19:45:00.000Z"
-last_activity: 2026-07-13 -- Phase 05 plan 02 complete
+last_updated: "2026-07-13T21:55:00.000Z"
+last_activity: 2026-07-13 -- Phase 05 plan 03 complete
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 14
-  completed_plans: 11
-  percent: 71
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State
@@ -26,23 +26,24 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 ## Current Position
 
 Phase: 05 (rust-consolidation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Executing Phase 05
-Last activity: 2026-07-13 -- Phase 05 execution started
+Last activity: 2026-07-13 -- Phase 05 plan 03 complete
 
-Progress: [██████████████████] ~85%
+Progress: [███████████████████] ~86%
 
-### Phase 2 status (final)
+### Phase 5 status
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| 02-01 Viewport | ✅ Complete | Centering fix: centroid baked into geometry via `geometry.translate` |
-| 02-02 Yaw | ✅ Complete | Linear slider + 45° snap; circular dial deferred to Phase 3 overlay |
-| 02-03 Export | ✅ Complete | Binary STL export with quaternion transform |
+| 05-01 Rust ranking + selection + yaw | ✅ Complete | TDD: ground-truth tests for ranking, selection, yaw; Cargo.toml dual-target |
+| 05-02 WASM exports + CLI | ✅ Complete | score_all_directions, rank_candidates, select_diverse, compute_norm_bounds; CLI binary; drop self-referential tests |
+| 05-03 TS thin layer | ✅ Complete | compute.ts stripped, compute.test.ts deleted, single-worker dispatcher, main.ts updated |
+| 05-04 Cross-verification | 🔲 Pending | CLI ref outputs for 12 combos + browser UI parity check |
 
 ### Next step
 
-Phase 4 — v3 UX Polish (Thumbnail Strip, Favorites, ZIP Export)
+Phase 5 Plan 4 — Cross-verification: CLI reference outputs for 12 (STL × ranker × profile) combinations + human-verify browser UI parity
 
 ## Performance Metrics
 
@@ -73,7 +74,7 @@ Recent decisions affecting current work:
 - **[Phase 1 drift]** Phase 2 scope (viewport, export, heatmap) landed inside Phase 1's JS work. Phase 2 plans must reconcile, not re-implement. (01-03-SUMMARY)
 - **[Phase 2]** Centroid (vertex average) is the rotation pivot, not bbox-center → stable rotation around center of mass
 - **[Phase 2]** Full candidate quaternion = `qYaw * qAlign(dir, -Y)` — align candidate dir to -Y first, then apply yaw
-- **[Phase 2]** Multi-worker: split candidate directions across `navigator.hardwareConcurrency - 1` workers
+- ~~**[Phase 2]** Multi-worker: split candidate directions across `navigator.hardwareConcurrency - 1` workers~~ (replaced in Phase 5 with single-worker WASM dispatcher — score_all_directions → rank_candidates → select_diverse runs entirely inside a thin worker)
 - **[Phase 2]** Decimate both positions and normals/areas to ~12K elements for 50x scoring speedup
 - **[Phase 2]** Consensus ranking (minimax) is the only ranking needed — 100% = best, 0% = worst
 - **[Phase 2]** H11 shadowed-overhang uses 8-sample yaw minimisation per direction
@@ -112,17 +113,18 @@ None.
 | Performance | WebGPU compute pipeline for GPU-class throughput | Aspirational (v2/v3) | Spike |
 | Phase 3 | 3D manipulation overlay (yaw/tilt with score feedback) | Phase 3 | Phase 2 close |
 | Phase 3 | Circular yaw dial + geometry snap | Phase 3 | Phase 2 close |
-| Cleanup | `multiplyQuats` duplicated in main.ts and compute.ts | Minor | Phase 2 |
+| Cleanup | ~~`multiplyQuats` duplicated in main.ts and compute.ts~~ | Resolved — compute.ts stripped | Phase 5 |
 
 ## Session Continuity
 
-Last session: 2026-07-13T19:45:00.000Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-07-13T21:55:00.000Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
 
 ### Infrastructure State
 
 - Vite dev server: running at http://localhost:5173/
-- WASM binary: `web/pkg/orient_core_bg.wasm` (132KB)
+- WASM binary: `web/pkg/orient_core_bg.wasm` (195KB — all metrics + ranking + selection)
 - TypeScript: `npx tsc --noEmit` passes
 - Build: `npm run build` succeeds
+- TS metric/ranking/selection functions: **0 remaining** (all migrated to Rust WASM)
