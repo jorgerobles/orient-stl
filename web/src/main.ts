@@ -4,12 +4,12 @@ import { exportSTL } from './exportSTL';
 import { rotatePositions } from './rotate';
 import { applyConvention } from './convention';
 import type { LoadConvention } from './convention';
-import { decimateForScore } from './compute';
-import { mergeCandidates, rankByConsensus, rankByWeights, rankByTopsis, WEIGHT_PRESETS } from './compute';
-import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
-import { score_orientation } from '../pkg/orient_core.js';
+import { decimateForScore, WEIGHT_PRESETS } from './compute';
+import type { OriData, Candidate, ComputeConfig } from './compute';
+import { score_orientation, compute_norm_bounds as wasm_compute_norm_bounds } from '../pkg/orient_core.js';
 import { defaultConfig } from './types';
 import { dirFromQuat } from './quaternion';
+import { nearestCandidateScore } from './nearestScore';
 
 let config = defaultConfig();
 let candidates: Candidate[] = [];
@@ -19,7 +19,7 @@ let areas: Float32Array | null = null;
 let currentIndex = 0;
 let stlName = '';
 let viewport: Viewport;
-let workers: Worker[] = [];
+let currentWorker: Worker | null = null;
 let lastFile: File | null = null;
 let lastFileBytes: Uint8Array | null = null;
 let loadConvention: LoadConvention = 'z-up';
@@ -43,27 +43,17 @@ function parseCurrentData(): OriData | null {
 }
 
 /** Sample ~30 directions and compute their 5 metrics to establish normalization
- *  bounds for live scoring. Cheaper than full candidate search — gives the user
- *  immediate feedback on load. */
+ *  bounds for live scoring. Uses WASM `compute_norm_bounds` for cheap sampling. */
 function computeNormBounds(data: OriData): void {
-  const numDirs = data.directions.length / 3;
-  if (numDirs === 0 || !liveData) return;
-  const step = Math.max(1, Math.floor(numDirs / 30));
-  const vals: number[][] = [[], [], [], [], []];
-  const { positions: p, normals: n, areas: a } = liveData;
-  for (let i = 0; i < numDirs; i += step) {
-    try {
-      const raw = score_orientation(p, n, a,
-        data.directions[i * 3], data.directions[i * 3 + 1], data.directions[i * 3 + 2],
-        config.criticalAngleDeg, 0, 42);
-      for (let m = 0; m < 5; m++) vals[m].push(raw[3 + m]);
-    } catch { /* skip bad direction */ }
-  }
-  if (vals[0].length === 0) return;
-  normBounds = {
-    lo: vals.map(v => Math.min(...v)),
-    hi: vals.map(v => Math.max(...v)),
-  };
+  if (!liveData) return;
+  try {
+    const raw = wasm_compute_norm_bounds(
+      liveData.positions, liveData.normals, liveData.areas,
+      data.directions, config.criticalAngleDeg,
+    ) as Float32Array;
+    // raw layout: [lo[0], lo[1], lo[2], lo[3], lo[4], hi[0], hi[1], hi[2], hi[3], hi[4]]
+    normBounds = { lo: Array.from(raw.subarray(0, 5)), hi: Array.from(raw.subarray(5, 10)) };
+  } catch { /* keep existing normBounds if sample fails */ }
 }
 
 const paint = () => new Promise<void>(r => setTimeout(r, 0));
@@ -118,35 +108,14 @@ function updateLiveScore(q: [number, number, number, number]): void {
     clamp((height - lo[4]) / span(4)),
   ];
 
-  // Overall score: use the SAME ranker as candidates when available.
-  // Temporarily add the live direction to the candidate set, run the ranker,
-  // and extract its score — guaranteeing identical formula + normalization.
+  // Overall score: use nearest precomputed candidate's compositeScore,
+  // or weighted average of normalized costs as fallback.
   const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
   const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight];
   let score: number;
   if (candidates.length > 0) {
-    const liveCand: Candidate = {
-      id: '__live__',
-      quaternion: [q[0], q[1], q[2], q[3]], // [x, y, z, w]
-      overhangPenalty: overhang,
-      footprint: foot,
-      maxCross: cross,
-      shadowed: 0,
-      surfaceQuality: surf,
-      estHeight: height,
-      refinedOverhang: overhang,
-      refineVariance: 0,
-      stability: 'stable' as const,
-      stabilityMargin: 1,
-      contactArea: 0,
-      compositeScore: 0,
-    };
-    const ranked = applyCurrentRank([...candidates, liveCand]);
-    score = ranked.find(c => c.id === '__live__')?.compositeScore ?? 0;
-    // rankByWeights sorts ascending (lower = better), so invert.
-    if (currentRanker === 'weights') score = 1 - score;
+    score = nearestCandidateScore([q[0], q[1], q[2], q[3]], candidates).score;
   } else {
-    // No candidates: weighted average from profile weights.
     const wSum = weights.reduce((a, b) => a + b, 0);
     score = wSum > 0
       ? 1 - costs.reduce((acc, c, i) => acc + weights[i] * c, 0) / wSum
@@ -304,21 +273,6 @@ function markClean(): void {
   recalcBtn.disabled = true;
 }
 
-function applyCurrentRank(raw: Candidate[]): Candidate[] {
-  const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
-  switch (currentRanker) {
-    case 'weights': return rankByWeights(raw, weights);
-    case 'topsis': return rankByTopsis(raw, weights);
-    case 'consensus':
-    default: return rankByConsensus(raw);
-  }
-}
-
-function workerCount(): number {
-  const max = navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(max - 1, 6));
-}
-
 async function spawnCompute(data: OriData): Promise<void> {
   progressContainer.style.display = 'block';
   progressBar.className = 'progress-bar-fill indeterminate';
@@ -336,102 +290,68 @@ async function spawnCompute(data: OriData): Promise<void> {
   const decimated = decimateForScore(data, 12000);
   liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
   progressLabel.textContent = 'Computing candidates...';
+  const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  const wArr: [number, number, number, number, number] = [weights.wOverhang, weights.wFootprint, weights.wCross, weights.wSurface, weights.wHeight];
 
-  const numDirs = decimated.directions.length / 3;
-  const numWorkers = workerCount();
-  const dirsPerWorker = Math.ceil(numDirs / numWorkers);
-  progressBar.className = 'progress-segments';
-  progressBar.style.width = '';
-  progressBar.innerHTML = '';
-  const segFills: HTMLDivElement[] = [];
-  for (let i = 0; i < numWorkers; i++) {
-    const seg = document.createElement('div');
-    seg.className = 'segment';
-    seg.style.width = `${100 / numWorkers}%`;
-    const fill = document.createElement('div');
-    fill.className = 'segment-fill';
-    seg.appendChild(fill);
-    progressBar.appendChild(seg);
-    segFills.push(fill);
-  }
+  const worker = new Worker(new URL('./orient.worker.ts', import.meta.url), { type: 'module' });
+  currentWorker = worker;
 
-  const allSlices: SliceResult[][] = Array.from({ length: numWorkers }, () => []);
-  let completedWorkers = 0;
-
-  function mergeAndShow() {
-    const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
-    const merged = applyCurrentRank(mergeCandidates(allSlices, computeConfig, weights, currentRanker));
-    if (merged.length > 0) {
-      candidates = merged;
-      currentIndex = 0;
-      // Update normalization bounds from full candidate set.
-      normBounds = {
-        lo: [
-          Math.min(...merged.map(c => c.refinedOverhang)),
-          Math.min(...merged.map(c => c.footprint)),
-          Math.min(...merged.map(c => c.maxCross)),
-          Math.min(...merged.map(c => c.surfaceQuality)),
-          Math.min(...merged.map(c => c.estHeight)),
-        ],
-        hi: [
-          Math.max(...merged.map(c => c.refinedOverhang)),
-          Math.max(...merged.map(c => c.footprint)),
-          Math.max(...merged.map(c => c.maxCross)),
-          Math.max(...merged.map(c => c.surfaceQuality)),
-          Math.max(...merged.map(c => c.estHeight)),
-        ],
-      };
-      displayResults(merged);
-    }
-  }
-
-  for (let w = 0; w < numWorkers; w++) {
-    const dirStart = w * dirsPerWorker;
-    const dirCount = Math.min(dirsPerWorker, numDirs - dirStart);
-    if (dirCount <= 0) { completedWorkers++; continue; }
-
-    const worker = new Worker(new URL('./orient.worker.ts', import.meta.url), { type: 'module' });
-    workers.push(worker);
-
-    const workerIdx = w;
-    worker.onmessage = (e) => {
-      const msg = e.data;
-      switch (msg.type) {
-        case 'progress':
-          segFills[workerIdx].style.width = `${msg.value}%`;
-          break;
-        case 'slice-done': {
-          allSlices[workerIdx] = msg.results as SliceResult[];
-          completedWorkers++;
-          segFills[workerIdx].style.width = '100%';
-          progressBar.children[workerIdx]?.classList.add('done');
-          mergeAndShow();
-          if (completedWorkers >= numWorkers) finishCompute();
-          break;
+  worker.onmessage = (e) => {
+    const msg = e.data;
+    switch (msg.type) {
+      case 'progress':
+        progressBar.className = 'progress-bar-fill determinate';
+        progressBar.style.width = `${msg.value}%`;
+        break;
+      case 'results': {
+        const merged = msg.candidates as Candidate[];
+        if (merged.length > 0) {
+          candidates = merged;
+          currentIndex = 0;
+          normBounds = {
+            lo: [
+              Math.min(...merged.map((c: Candidate) => c.refinedOverhang)),
+              Math.min(...merged.map((c: Candidate) => c.footprint)),
+              Math.min(...merged.map((c: Candidate) => c.maxCross)),
+              Math.min(...merged.map((c: Candidate) => c.surfaceQuality)),
+              Math.min(...merged.map((c: Candidate) => c.estHeight)),
+            ],
+            hi: [
+              Math.max(...merged.map((c: Candidate) => c.refinedOverhang)),
+              Math.max(...merged.map((c: Candidate) => c.footprint)),
+              Math.max(...merged.map((c: Candidate) => c.maxCross)),
+              Math.max(...merged.map((c: Candidate) => c.surfaceQuality)),
+              Math.max(...merged.map((c: Candidate) => c.estHeight)),
+            ],
+          };
+          displayResults(merged);
         }
+        finishCompute();
+        break;
       }
-    };
-    worker.onerror = (err) => {
-      console.error(`Worker ${workerIdx} error:`, err);
-      completedWorkers++;
-      progressBar.children[workerIdx]?.classList.add('done');
-      segFills[workerIdx].style.width = '100%';
-      if (completedWorkers >= numWorkers) finishCompute();
-    };
-    worker.postMessage({ data: decimated, config: computeConfig, dirStart, dirCount });
-  }
+      case 'error': {
+        console.error('Worker error:', msg.message);
+        finishCompute();
+        break;
+      }
+    }
+  };
+  worker.onerror = (err) => {
+    console.error('Worker error:', err);
+    finishCompute();
+  };
+  worker.postMessage({ data: decimated, config: computeConfig, weights: wArr, ranker: currentRanker, maxCandidates: computeConfig.maxCandidates, minAngleDeg: 15 });
 }
 
 function finishCompute(): void {
   progressContainer.style.display = 'none';
-  workers = [];
+  currentWorker = null;
   markClean();
 
   if (candidates.length === 0) {
     statusEl.textContent = 'No candidates generated';
     return;
   }
-  candidates = applyCurrentRank(candidates);
   statusEl.textContent = `${candidates.length} candidates — click one to try it`;
   currentIndex = 0;
   viewport.setCriticalAngle(config.criticalAngleDeg);
@@ -440,8 +360,7 @@ function finishCompute(): void {
 }
 
 function cancelCompute(): void {
-  for (const w of workers) { w.terminate(); }
-  workers = [];
+  if (currentWorker) { currentWorker.terminate(); currentWorker = null; }
   progressContainer.style.display = 'none';
 }
 
@@ -510,7 +429,7 @@ profileSelect.innerHTML = Object.keys(WEIGHT_PRESETS).map(name =>
 ).join('');
 profileSelect.addEventListener('change', () => {
   currentProfile = profileSelect.value;
-  if (candidates.length > 0) { candidates = applyCurrentRank(candidates); displayResults(candidates); }
+  if (candidates.length > 0 && lastOriData) { spawnCompute(lastOriData); }
   saveConfig();
   markDirty();
   if (liveData) updateLiveScore(viewport.getMeshQuaternion());
