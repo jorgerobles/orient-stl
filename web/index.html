@@ -235,6 +235,22 @@
         Hull+Sphere Mode
       </label>
       <p class="hint">Include ~200 Fibonacci-sphere candidates.</p>
+      <label>
+        Weight Profile:
+        <select id="profile-select">
+          <option value="resin-biased" selected>resin-biased</option>
+        </select>
+      </label>
+      <p class="hint">Scoring weights per use case.</p>
+      <label>
+        Ranker:
+        <select id="ranker-select">
+          <option value="consensus" selected>consensus (minimax)</option>
+          <option value="weights">weighted sum</option>
+          <option value="topsis">TOPSIS</option>
+        </select>
+      </label>
+      <p class="hint">Consensus = equal veto; TOPSIS = distance-based MCDA.</p>
     </div>
 
     <div id="progress-container" class="progress-container" style="display:none">

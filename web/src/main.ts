@@ -5,7 +5,7 @@ import { rotatePositions } from './rotate';
 import { applyConvention } from './convention';
 import type { LoadConvention } from './convention';
 import { decimateForScore, nearestCandidateScore } from './compute';
-import { mergeCandidates, rankByConsensus } from './compute';
+import { mergeCandidates, rankByConsensus, rankByWeights, rankByTopsis, WEIGHT_PRESETS } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
 import { defaultConfig } from './types';
 
@@ -115,7 +115,7 @@ document.getElementById('varita-btn')!.addEventListener('click', async () => {
     const result = (wasmModule as any).refine_orientation(
       positions, faceNormals, areas,
       dir[0], dir[1], dir[2],
-      config.criticalAngleDeg, 50,
+      config.criticalAngleDeg, 50, 42,
     );
 
     const refinedDir: [number, number, number] = [result[0], result[1], result[2]];
@@ -210,8 +210,17 @@ async function handleFile(file: File): Promise<void> {
   }
 }
 
+let currentProfile: string = 'resin-biased';
+let currentRanker: string = 'consensus';
+
 function applyCurrentRank(raw: Candidate[]): Candidate[] {
-  return rankByConsensus(raw);
+  const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  switch (currentRanker) {
+    case 'weights': return rankByWeights(raw, weights);
+    case 'topsis': return rankByTopsis(raw, weights);
+    case 'consensus':
+    default: return rankByConsensus(raw);
+  }
 }
 
 function workerCount(): number {
@@ -370,6 +379,25 @@ const conventionSelect = document.getElementById('convention-select') as HTMLSel
 conventionSelect.addEventListener('change', () => {
   loadConvention = conventionSelect.value as LoadConvention;
   if (lastFile) handleFile(lastFile);
+});
+
+const profileSelect = document.getElementById('profile-select') as HTMLSelectElement;
+profileSelect.innerHTML = Object.keys(WEIGHT_PRESETS).map(name =>
+  `<option value="${name}" ${name === currentProfile ? 'selected' : ''}>${name}</option>`
+).join('');
+profileSelect.addEventListener('change', () => {
+  currentProfile = profileSelect.value;
+  if (candidates.length > 0) { candidates = applyCurrentRank(candidates); displayResults(candidates); }
+});
+
+const rankerSelect = document.getElementById('ranker-select') as HTMLSelectElement;
+rankerSelect.addEventListener('change', () => {
+  currentRanker = rankerSelect.value;
+  if (candidates.length > 0) {
+    candidates = applyCurrentRank(candidates);
+    displayResults(candidates);
+    if (currentIndex < candidates.length) viewport.showCandidate(candidates[currentIndex].quaternion);
+  }
 });
 
 fileInput.addEventListener('change', () => {

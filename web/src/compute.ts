@@ -14,6 +14,8 @@ export interface Candidate {
   shadowed: number;
   surfaceQuality: number;
   estHeight: number;
+  refinedOverhang: number;
+  refineVariance: number;
   stability: 'stable' | 'unstable';
   stabilityMargin: number;
   contactArea: number;
@@ -34,12 +36,25 @@ export interface SliceResult {
   surface: number;
   quaternion: [number, number, number, number];
   height: number;
+  refinedOverhang: number;
+  refineVariance: number;
   stability: boolean;
   stabilityMargin: number;
   contactArea: number;
   idx: number;
   dir: [number, number, number];
 }
+
+/** Callback for injecting WASM batch refine into computeSlice. Returns K×4
+ *  floats: each run's [dir_x, dir_y, dir_z, score]. Enables testing the
+ *  refine pipeline without WASM. (D-08/D-09) */
+export type RefineFn = (
+  dir: [number, number, number],
+  positions: Float32Array,
+  normals: Float32Array,
+  areas: Float32Array,
+  criticalAngleDeg: number,
+) => number[] | Float32Array;
 
 export function directionFromIndex(data: OriData, i: number): [number, number, number] {
   const di = i * 3;
@@ -569,6 +584,7 @@ export function computeSlice(
   dirStart: number,
   dirCount: number,
   onProgress?: (pct: number) => void,
+  refineFn?: RefineFn,
 ): SliceResult[] {
   const results: SliceResult[] = [];
   for (let i = 0; i < dirCount; i++) {
@@ -581,11 +597,34 @@ export function computeSlice(
     const stab = checkStability(dir, data.positions);
     const height = computeHeight(dir, data.positions);
     const qYaw = computeDefaultYaw(dir, data.positions);
-    // Compose: first align dir to -Y, then apply yaw (yaw rotates around the direction axis,
-    // which after alignment becomes the -Y axis — but since rotation around -Y is symmetric to +Y,
-    // the yaw axis choice doesn't change the visual result).
     const qAlign = quaternionAlign(dir, [0, -1, 0]);
     const qFull = multiplyQuats(qYaw, qAlign);
+
+    // Batch refine (D-08/D-09): if refineFn is provided, call it to get K×4
+    // floats, extract K scores, compute refinedOverhang (min) and
+    // refineVariance (population stddev). Guard with try/catch so one bad
+    // direction doesn't kill all computation (T-03.5-03).
+    let refinedOverhang = penalty;
+    let refineVariance = 0;
+    if (refineFn) {
+      try {
+        const refineOut = refineFn(dir, data.positions, data.normals, data.areas, config.criticalAngleDeg);
+        const k = refineOut.length / 4;
+        if (k > 0) {
+          const scores: number[] = [];
+          for (let j = 0; j < k; j++) scores.push(refineOut[j * 4 + 3]);
+          refinedOverhang = Math.min(...scores);
+          const mean = scores.reduce((a, b) => a + b, 0) / k;
+          const variance = scores.reduce((a, b) => a + (b - mean) * (b - mean), 0) / k;
+          refineVariance = Math.sqrt(variance);
+        }
+      } catch (err) {
+        console.warn('refineFn failed for direction, using raw penalty:', err);
+        refinedOverhang = penalty;
+        refineVariance = 0;
+      }
+    }
+
     results.push({
       dir,
       penalty,
@@ -595,6 +634,8 @@ export function computeSlice(
       surface: surf,
       quaternion: qFull,
       height,
+      refinedOverhang,
+      refineVariance,
       stability: stab.stable,
       stabilityMargin: stab.margin,
       contactArea: stab.contactArea,
@@ -627,6 +668,8 @@ export function mergeCandidates(slices: SliceResult[][], config: ComputeConfig):
           shadowed: item.shadowed,
           surfaceQuality: item.surface,
           estHeight: item.height,
+          refinedOverhang: item.refinedOverhang,
+          refineVariance: item.refineVariance,
           stability: item.stability ? 'stable' : 'unstable',
           stabilityMargin: item.stabilityMargin,
           contactArea: item.contactArea,
