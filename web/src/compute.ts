@@ -26,6 +26,7 @@ export interface ComputeConfig {
   criticalAngleDeg: number;
   excludeUnstable: boolean;
   maxCandidates: number;
+  refineIterations?: number;
 }
 
 export interface SliceResult {
@@ -647,11 +648,85 @@ export function computeSlice(
 }
 
 /** Merge slice results from all workers into final diverse candidates.
- *  Selection uses angle-diversity on the overhang-sorted list; each candidate
- *  carries raw overhang/footprint/maxCross for later re-ranking by weights. */
-export function mergeCandidates(slices: SliceResult[][], config: ComputeConfig): Candidate[] {
+ *  Selection uses angle-diversity on the sorted list; each candidate
+ *  carries raw overhang/footprint/maxCross for later re-ranking.
+ *  `weights` controls weighted-sum sorting (for profile-aware selection).
+ *  `ranker` selects the sort formula before diversity picking:
+ *    "consensus" — 1 − max(normalised costs), "weights" — weighted sum,
+ *    "topsis" — falls back to consensus for the selection pass. */
+export function mergeCandidates(
+  slices: SliceResult[][],
+  config: ComputeConfig,
+  weights?: ScoreWeights,
+  ranker?: string,
+): Candidate[] {
   const all = slices.flat();
-  all.sort((a, b) => a.penalty - b.penalty);
+  if (weights && (!ranker || ranker === 'weights')) {
+    const wActive = weights.wOverhang + weights.wFootprint + weights.wCross + weights.wSurface + weights.wHeight;
+    if (wActive > 0) {
+      const oVals = all.map(s => s.refinedOverhang);
+      const fVals = all.map(s => s.footprint);
+      const cVals = all.map(s => s.maxCross);
+      const sVals = all.map(s => s.surface);
+      const hVals = all.map(s => s.height);
+      const oL = Math.min(...oVals), oH = Math.max(...oVals);
+      const fL = Math.min(...fVals), fH = Math.max(...fVals);
+      const cL = Math.min(...cVals), cH = Math.max(...cVals);
+      const sL = Math.min(...sVals), sH = Math.max(...sVals);
+      const hL = Math.min(...hVals), hH = Math.max(...hVals);
+      const oS = Math.max(oH - oL, 1e-9), fS = Math.max(fH - fL, 1e-9);
+      const cS = Math.max(cH - cL, 1e-9), sS = Math.max(sH - sL, 1e-9);
+      const hS = Math.max(hH - hL, 1e-9);
+      all.sort((a, b) => {
+        const aScore =
+          weights!.wOverhang * ((a.refinedOverhang - oL) / oS) +
+          weights!.wFootprint   * ((a.footprint - fL) / fS) +
+          weights!.wCross       * ((a.maxCross - cL) / cS) +
+          weights!.wSurface     * ((a.surface - sL) / sS) +
+          weights!.wHeight      * ((a.height - hL) / hS);
+        const bScore =
+          weights!.wOverhang * ((b.refinedOverhang - oL) / oS) +
+          weights!.wFootprint   * ((b.footprint - fL) / fS) +
+          weights!.wCross       * ((b.maxCross - cL) / cS) +
+          weights!.wSurface     * ((b.surface - sL) / sS) +
+          weights!.wHeight      * ((b.height - hL) / hS);
+        return aScore - bScore;
+      });
+    } else {
+      all.sort((a, b) => a.refinedOverhang - b.refinedOverhang);
+    }
+  } else if (ranker === 'consensus' || ranker === 'topsis') {
+    // Consensus (or TOPSIS proxy): 1 − max(normalised costs).
+    const oVals = all.map(s => s.refinedOverhang);
+    const fVals = all.map(s => s.footprint);
+    const cVals = all.map(s => s.maxCross);
+    const sVals = all.map(s => s.surface);
+    const hVals = all.map(s => s.height);
+    const oL = Math.min(...oVals), oH = Math.max(...oVals);
+    const fL = Math.min(...fVals), fH = Math.max(...fVals);
+    const cL = Math.min(...cVals), cH = Math.max(...cVals);
+    const sL = Math.min(...sVals), sH = Math.max(...sVals);
+    const hL = Math.min(...hVals), hH = Math.max(...hVals);
+    const oS = Math.max(oH - oL, 1e-9), fS = Math.max(fH - fL, 1e-9);
+    const cS = Math.max(cH - cL, 1e-9), sS = Math.max(sH - sL, 1e-9);
+    const hS = Math.max(hH - hL, 1e-9);
+    // Schwartzian transform: decorate, sort, undecorate.
+    const decorated = all.map((s, i) => ({
+      idx: i,
+      score: 1 - Math.max(
+        (s.refinedOverhang - oL) / oS,
+        (s.footprint - fL) / fS,
+        (s.maxCross - cL) / cS,
+        (s.surface - sL) / sS,
+        (s.height - hL) / hS,
+      ),
+    }));
+    decorated.sort((a, b) => b.score - a.score);
+    const sorted = decorated.map(d => all[d.idx]);
+    all.length = 0; all.push(...sorted);
+  } else {
+    all.sort((a, b) => a.refinedOverhang - b.refinedOverhang);
+  }
   const results: Candidate[] = [];
   const picked: [number, number, number][] = [];
   const minAngle = 15;
@@ -710,8 +785,8 @@ export function rankByWeights(candidates: Candidate[], weights: ScoreWeights): C
   let sMin = Infinity, sMax = -Infinity;
   let hMin = Infinity, hMax = -Infinity;
   for (const c of candidates) {
-    if (c.overhangPenalty < oMin) oMin = c.overhangPenalty;
-    if (c.overhangPenalty > oMax) oMax = c.overhangPenalty;
+    if (c.refinedOverhang < oMin) oMin = c.refinedOverhang;
+    if (c.refinedOverhang > oMax) oMax = c.refinedOverhang;
     if (c.footprint < fMin) fMin = c.footprint;
     if (c.footprint > fMax) fMax = c.footprint;
     if (c.maxCross < cMin) cMin = c.maxCross;
@@ -727,7 +802,7 @@ export function rankByWeights(candidates: Candidate[], weights: ScoreWeights): C
   const sSpan = Math.max(sMax - sMin, 1e-9);
   const hSpan = Math.max(hMax - hMin, 1e-9);
   const ranked = candidates.map(c => {
-    const on = (c.overhangPenalty - oMin) / oSpan;
+    const on = (c.refinedOverhang - oMin) / oSpan;
     const fn = (c.footprint - fMin) / fSpan;
     const cn = (c.maxCross - cMin) / cSpan;
     // surfaceQuality is a MAXIMISE metric → invert so high quality = low cost.
@@ -768,7 +843,7 @@ export function rankByConsensus(candidates: Candidate[]): Candidate[] {
     const span = Math.max(hi - lo, 1e-9);
     return vals.map(v => (hi - v) / span);
   };
-  const oN = norm(candidates.map(c => c.overhangPenalty));
+  const oN = norm(candidates.map(c => c.refinedOverhang));
   const fN = norm(candidates.map(c => c.footprint));
   const cN = norm(candidates.map(c => c.maxCross));
   const sN = norm(candidates.map(c => c.shadowed));
@@ -797,7 +872,7 @@ export function rankByTopsis(candidates: Candidate[], weights: ScoreWeights): Ca
   const n = candidates.length;
 
   // Extract raw metric arrays.
-  const over = candidates.map(c => c.overhangPenalty);
+  const over = candidates.map(c => c.refinedOverhang);
   const foot = candidates.map(c => c.footprint);
   const cross = candidates.map(c => c.maxCross);
   const surf = candidates.map(c => c.surfaceQuality);

@@ -4,9 +4,10 @@ import { exportSTL } from './exportSTL';
 import { rotatePositions } from './rotate';
 import { applyConvention } from './convention';
 import type { LoadConvention } from './convention';
-import { decimateForScore, nearestCandidateScore } from './compute';
+import { decimateForScore, footprintArea, maxCrossSection, misalignmentScore, computeHeight } from './compute';
 import { mergeCandidates, rankByConsensus, rankByWeights, rankByTopsis, WEIGHT_PRESETS } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
+import { refine_orientation } from '../pkg/orient_core.js';
 import { defaultConfig } from './types';
 
 let config = defaultConfig();
@@ -19,7 +20,22 @@ let stlName = '';
 let viewport: Viewport;
 let workers: Worker[] = [];
 let lastFile: File | null = null;
+let lastFileBytes: Uint8Array | null = null;
 let loadConvention: LoadConvention = 'z-up';
+
+function parseCurrentData(): OriData | null {
+  if (!lastFileBytes) return null;
+  const raw = prepareData(lastFileBytes, config as unknown as Record<string, unknown>) as unknown as {
+    positions: number[]; normals: number[]; areas: number[]; directions: number[];
+  };
+  if (raw.positions.length === 0 || raw.directions.length === 0) return null;
+  return {
+    positions: applyConvention(new Float32Array(raw.positions), loadConvention),
+    normals: applyConvention(new Float32Array(raw.normals), loadConvention),
+    areas: new Float32Array(raw.areas),
+    directions: applyConvention(new Float32Array(raw.directions), loadConvention),
+  };
+}
 
 const paint = () => new Promise<void>(r => setTimeout(r, 0));
 
@@ -78,62 +94,67 @@ function exitOverlay(): void {
   }
 }
 
-function updateLiveScore(q: [number, number, number, number]): void {
-  const nearest = nearestCandidateScore(q, candidates);
-  candidateInfoEl.innerHTML =
-    `<span class="score">${(nearest.score * 100).toFixed(0)}%</span>`;
+function applyQuat(q: [number, number, number, number], v: [number, number, number]): [number, number, number] {
+  const [w, x, y, z] = q;
+  const [vx, vy, vz] = v;
+  const uv_x = y * vz - z * vy;
+  const uv_y = z * vx - x * vz;
+  const uv_z = x * vy - y * vx;
+  const uuv_x = y * uv_z - z * uv_y;
+  const uuv_y = z * uv_x - x * uv_z;
+  const uuv_z = x * uv_y - y * uv_x;
+  return [vx + 2 * (w * uv_x + uuv_x), vy + 2 * (w * uv_y + uuv_y), vz + 2 * (w * uv_z + uuv_z)];
 }
 
-document.getElementById('varita-btn')!.addEventListener('click', async () => {
-  if (!positions || !faceNormals || !areas || candidates.length === 0 || !overlayActive) return;
+function updateLiveScore(q: [number, number, number, number]): void {
+  if (!liveData || candidates.length === 0) return;
+  const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
+  const dir = applyQuat(invQ, [0, -1, 0]);
 
-  const varitaBtn = document.getElementById('varita-btn') as HTMLButtonElement;
-  varitaBtn.disabled = true;
-  varitaBtn.textContent = 'Refining...';
-  candidateInfoEl.innerHTML = `<span class="score" style="font-size:0.9rem;color:#888">Refining...</span>`;
-
+  // WASM = single source of truth for overhang.
+  const { positions: lp, normals: ln, areas: la } = liveData;
+  let refined: number;
   try {
-    const q = viewport.getMeshQuaternion();
-    const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
-    const dir = (() => {
-      const [w, x, y, z] = invQ;
-      const v: [number, number, number] = [0, -1, 0];
-      const uv_x = y * v[2] - z * v[1];
-      const uv_y = z * v[0] - x * v[2];
-      const uv_z = x * v[1] - y * v[0];
-      const uuv_x = y * uv_z - z * uv_y;
-      const uuv_y = z * uv_x - x * uv_z;
-      const uuv_z = x * uv_y - y * uv_x;
-      return [
-        v[0] + 2.0 * (w * uv_x + uuv_x),
-        v[1] + 2.0 * (w * uv_y + uuv_y),
-        v[2] + 2.0 * (w * uv_z + uuv_z),
-      ] as [number, number, number];
-    })();
-
-    const wasmModule = await import('../pkg/orient_core.js');
-    const result = (wasmModule as any).refine_orientation(
-      positions, faceNormals, areas,
-      dir[0], dir[1], dir[2],
-      config.criticalAngleDeg, 50, 42,
-    );
-
-    const refinedDir: [number, number, number] = [result[0], result[1], result[2]];
-    const THREE = await import('three');
-    const newQuat = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(refinedDir[0], refinedDir[1], refinedDir[2]),
-      new THREE.Vector3(0, -1, 0),
-    );
-    viewport.showCandidate([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
-    updateLiveScore([newQuat.x, newQuat.y, newQuat.z, newQuat.w]);
-  } catch (err) {
-    console.error('Hill-climb failed:', err);
-    candidateInfoEl.innerHTML = `<span class="score" style="color:#e74c3c">Error</span>`;
+    const res = refine_orientation(lp, ln, la, dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, 42);
+    refined = res[3];
+  } catch {
+    refined = 0;
   }
 
-  varitaBtn.textContent = '✨ Varita';
-  varitaBtn.disabled = false;
-});
+  const foot = footprintArea(dir, ln, la);
+  const cross = maxCrossSection(dir, lp, ln, la, 64);
+  const surf = misalignmentScore(dir, ln, la);
+  const height = computeHeight(dir, lp);
+
+  // Fixed normalization range from candidates only (stable as you drag).
+  // Weighted average with profile weights — no single metric can kill the score.
+  const oVals = candidates.map(c => c.refinedOverhang);
+  const fVals = candidates.map(c => c.footprint);
+  const cVals = candidates.map(c => c.maxCross);
+  const sVals = candidates.map(c => c.surfaceQuality);
+  const hVals = candidates.map(c => c.estHeight);
+  const oL = Math.min(...oVals), oH = Math.max(...oVals);
+  const fL = Math.min(...fVals), fH = Math.max(...fVals);
+  const cL = Math.min(...cVals), cH = Math.max(...cVals);
+  const sL = Math.min(...sVals), sH = Math.max(...sVals);
+  const hL = Math.min(...hVals), hH = Math.max(...hVals);
+  const oS = Math.max(oH - oL, 1e-9), fS = Math.max(fH - fL, 1e-9);
+  const cS = Math.max(cH - cL, 1e-9), sS = Math.max(sH - sL, 1e-9);
+  const hS = Math.max(hH - hL, 1e-9);
+  const clamp = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+  const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  const wSum = w.wOverhang + w.wFootprint + w.wCross + w.wSurface + w.wHeight;
+  const score = wSum > 0 ? 1 - (
+    w.wOverhang * clamp((refined - oL) / oS) +
+    w.wFootprint * clamp((foot - fL) / fS) +
+    w.wCross * clamp((cross - cL) / cS) +
+    w.wSurface * clamp((surf - sL) / sS) +
+    w.wHeight * clamp((height - hL) / hS)
+  ) / wSum : 1 - clamp((refined - oL) / oS);
+
+  candidateInfoEl.innerHTML = `<span class="score">${(score * 100).toFixed(0)}%</span>`;
+}
 
 document.getElementById('exit-btn')!.addEventListener('click', exitOverlay);
 document.getElementById('reset-btn')!.addEventListener('click', () => {
@@ -146,6 +167,8 @@ document.getElementById('next-btn')!.addEventListener('click', () => { if (curre
 
 async function boot(): Promise<void> {
   statusEl.textContent = 'Initializing WASM...';
+  loadConfig();
+  viewport.setCriticalAngle(config.criticalAngleDeg);
   try {
     await initWasm();
     statusEl.textContent = 'Ready — load an STL file';
@@ -168,32 +191,18 @@ async function handleFile(file: File): Promise<void> {
   progressBar.className = 'progress-bar-fill indeterminate';
   try {
     const bytes = await loadSTLBytes(file);
+    lastFileBytes = bytes;
     stlName = file.name;
 
     progressLabel.textContent = 'Parsing STL (WASM)...';
     await paint();
-    const raw = prepareData(bytes, config as unknown as Record<string, unknown>) as unknown as {
-      positions: number[]; normals: number[]; areas: number[]; directions: number[];
-    };
-
-    if (raw.positions.length === 0) throw new Error('No triangles in STL');
-    if (raw.directions.length === 0) throw new Error('No candidates generated');
-
-    // Bake the user's chosen axis convention into the geometry AND candidate
-    // directions before anything else sees them. Positions, face normals, and
-    // direction vectors are all flat xyz arrays in the same frame, so the
-    // same swap keeps the scoring pipeline consistent. Areas are per-triangle
-    // scalars — unaffected by rotation.
-    const fullData: OriData = {
-      positions: applyConvention(new Float32Array(raw.positions), loadConvention),
-      normals: applyConvention(new Float32Array(raw.normals), loadConvention),
-      areas: new Float32Array(raw.areas),
-      directions: applyConvention(new Float32Array(raw.directions), loadConvention),
-    };
+    const fullData = parseCurrentData();
+    if (!fullData) throw new Error('No triangles or candidates in STL');
 
     positions = fullData.positions;
     faceNormals = fullData.normals;
     areas = fullData.areas;
+    lastOriData = fullData;
 
     progressLabel.textContent = 'Rendering model...';
     statusEl.textContent = 'Rendering model...';
@@ -212,6 +221,58 @@ async function handleFile(file: File): Promise<void> {
 
 let currentProfile: string = 'resin-biased';
 let currentRanker: string = 'consensus';
+let isComputeDirty = false;
+let lastOriData: OriData | null = null;
+let liveData: { positions: Float32Array; normals: Float32Array; areas: Float32Array } | null = null;
+
+const recalcBtn = document.getElementById('recalc-btn') as HTMLButtonElement;
+
+const STORAGE_KEY = 'orient-stl-config';
+const SCHEMA_VERSION = 1;
+interface StoredConfig {
+  version: number; profile: string; ranker: string;
+  criticalAngleDeg: number; convention: string; hullSphere: boolean;
+}
+
+function saveConfig(): void {
+  const data: StoredConfig = {
+    version: SCHEMA_VERSION,
+    profile: currentProfile, ranker: currentRanker,
+    criticalAngleDeg: config.criticalAngleDeg,
+    convention: loadConvention, hullSphere: hullSphereToggle.checked,
+  };
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* quota */ }
+}
+
+function loadConfig(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw) as StoredConfig;
+    if (data.version !== SCHEMA_VERSION) { localStorage.removeItem(STORAGE_KEY); return; }
+    currentProfile = data.profile ?? 'resin-biased';
+    currentRanker = data.ranker ?? 'consensus';
+    config.criticalAngleDeg = data.criticalAngleDeg ?? 30;
+    loadConvention = data.convention as LoadConvention ?? 'z-up';
+    hullSphereToggle.checked = data.hullSphere ?? false;
+    config.mode = hullSphereToggle.checked ? 'hull_plus_sphere' : 'hull';
+    angleSlider.value = String(config.criticalAngleDeg);
+    angleValue.textContent = String(config.criticalAngleDeg);
+    conventionSelect.value = loadConvention;
+    profileSelect.value = currentProfile;
+    rankerSelect.value = currentRanker;
+    viewport.setCriticalAngle(config.criticalAngleDeg);
+  } catch { /* corrupt → keep defaults */ }
+}
+
+function markDirty(): void {
+  isComputeDirty = true;
+  recalcBtn.disabled = false;
+}
+function markClean(): void {
+  isComputeDirty = false;
+  recalcBtn.disabled = true;
+}
 
 function applyCurrentRank(raw: Candidate[]): Candidate[] {
   const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
@@ -239,10 +300,12 @@ async function spawnCompute(data: OriData): Promise<void> {
     criticalAngleDeg: config.criticalAngleDeg,
     excludeUnstable: config.excludeUnstable,
     maxCandidates: config.maxCandidates,
+    refineIterations: config.refineIterations,
   };
 
   await paint();
   const decimated = decimateForScore(data, 12000);
+  liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
   progressLabel.textContent = 'Computing candidates...';
 
   const numDirs = decimated.directions.length / 3;
@@ -267,7 +330,8 @@ async function spawnCompute(data: OriData): Promise<void> {
   let completedWorkers = 0;
 
   function mergeAndShow() {
-    const merged = applyCurrentRank(mergeCandidates(allSlices, computeConfig));
+    const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+    const merged = applyCurrentRank(mergeCandidates(allSlices, computeConfig, weights, currentRanker));
     if (merged.length > 0) {
       candidates = merged;
       currentIndex = 0;
@@ -318,6 +382,7 @@ async function spawnCompute(data: OriData): Promise<void> {
 function finishCompute(): void {
   progressContainer.style.display = 'none';
   workers = [];
+  markClean();
 
   if (candidates.length === 0) {
     statusEl.textContent = 'No candidates generated';
@@ -367,37 +432,64 @@ angleSlider.addEventListener('input', () => {
   config.criticalAngleDeg = parseFloat(angleSlider.value);
   angleValue.textContent = angleSlider.value;
   viewport.setCriticalAngle(config.criticalAngleDeg);
+  saveConfig();
+  markDirty();
 });
 
 const hullSphereToggle = document.getElementById('hull-sphere-toggle') as HTMLInputElement;
 hullSphereToggle.addEventListener('change', () => {
   config.mode = hullSphereToggle.checked ? 'hull_plus_sphere' : 'hull';
-  if (lastFile) handleFile(lastFile);
+  saveConfig();
+  markDirty();
 });
 
 const conventionSelect = document.getElementById('convention-select') as HTMLSelectElement;
 conventionSelect.addEventListener('change', () => {
   loadConvention = conventionSelect.value as LoadConvention;
-  if (lastFile) handleFile(lastFile);
+  saveConfig();
+  markDirty();
 });
+
+const PROFILE_LABELS: Record<string, string> = {
+  'overhang-only': 'Minimize Supports',
+  'footprint-only': 'Minimize Footprint',
+  'cross-only': 'Structural Strength',
+  'surface-only': 'Best Surface Quality',
+  'height-only': 'Fast Print',
+  'equal': 'Balanced',
+  'resin-biased': 'Resin Printing',
+  'overhang-footprint': 'Support + Footprint',
+};
 
 const profileSelect = document.getElementById('profile-select') as HTMLSelectElement;
 profileSelect.innerHTML = Object.keys(WEIGHT_PRESETS).map(name =>
-  `<option value="${name}" ${name === currentProfile ? 'selected' : ''}>${name}</option>`
+  `<option value="${name}" ${name === currentProfile ? 'selected' : ''}>${PROFILE_LABELS[name] ?? name}</option>`
 ).join('');
 profileSelect.addEventListener('change', () => {
   currentProfile = profileSelect.value;
   if (candidates.length > 0) { candidates = applyCurrentRank(candidates); displayResults(candidates); }
+  saveConfig();
+  markDirty();
 });
 
 const rankerSelect = document.getElementById('ranker-select') as HTMLSelectElement;
 rankerSelect.addEventListener('change', () => {
   currentRanker = rankerSelect.value;
-  if (candidates.length > 0) {
-    candidates = applyCurrentRank(candidates);
-    displayResults(candidates);
-    if (currentIndex < candidates.length) viewport.showCandidate(candidates[currentIndex].quaternion);
-  }
+  saveConfig();
+  markDirty();
+});
+
+recalcBtn.addEventListener('click', async () => {
+  if (!lastFileBytes) return;
+  cancelCompute();
+  progressContainer.style.display = 'block';
+  progressLabel.textContent = 'Reparsing STL...';
+  progressBar.className = 'progress-bar-fill indeterminate';
+  await paint();
+  const data = parseCurrentData();
+  if (!data) { statusEl.textContent = 'No data to recalculate'; progressContainer.style.display = 'none'; return; }
+  positions = data.positions; faceNormals = data.normals; areas = data.areas; lastOriData = data;
+  spawnCompute(data);
 });
 
 fileInput.addEventListener('change', () => {

@@ -93,7 +93,7 @@ describe("rankByWeights", () => {
       shadowed,
       surfaceQuality: surface,
       estHeight: height,
-      refinedOverhang: 0,
+      refinedOverhang: over,
       refineVariance: 0,
       stability: 'stable',
       stabilityMargin: 1,
@@ -147,7 +147,7 @@ describe("rankByConsensus", () => {
       quaternion: [1, 0, 0, 0],
       overhangPenalty: over, footprint: foot, maxCross: cross, shadowed,
       surfaceQuality: surface, estHeight: height,
-      refinedOverhang: 0, refineVariance: 0,
+      refinedOverhang: over, refineVariance: 0,
       stability: 'stable', stabilityMargin: 1, contactArea: 1, compositeScore: 0,
     };
   }
@@ -309,7 +309,7 @@ describe("rankByTopsis", () => {
       quaternion: [1, 0, 0, 0],
       overhangPenalty: over, footprint: foot, maxCross: cross, shadowed,
       surfaceQuality: surface, estHeight: height,
-      refinedOverhang: 0, refineVariance: 0,
+      refinedOverhang: over, refineVariance: 0,
       stability: 'stable', stabilityMargin: 1, contactArea: 1, compositeScore: 0,
     };
   }

@@ -77,6 +77,9 @@
       border: 1px solid rgba(255,255,255,0.12);
     }
     .button-ghost:hover { background: rgba(255,255,255,0.15); }
+    .button:disabled { opacity: 0.3; cursor: default; pointer-events: none; }
+    #recalc-btn:not(:disabled) { background: #4a90d9; color: #fff; }
+    #recalc-btn:not(:disabled):hover { background: #357abd; }
 
     /* ─── Progress ─── */
     .progress-container { margin-bottom: 0.75rem; }
@@ -115,6 +118,9 @@
       background: rgba(255,255,255,0.08); color: #ddd;
       border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
       padding: 0.2rem 0.4rem; font-size: 0.78rem; accent-color: #4a90d9;
+    }
+    .config-panel select option {
+      background: #1a1a1a; color: #eee;
     }
     .hint { color: #666; font-size: 0.72rem; margin-top: 0.2rem; }
     .config-checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: #aaa; margin-top: 0.4rem; cursor: pointer; }
@@ -236,12 +242,12 @@
       </label>
       <p class="hint">Include ~200 Fibonacci-sphere candidates.</p>
       <label>
-        Weight Profile:
+        Optimize for:
         <select id="profile-select">
-          <option value="resin-biased" selected>resin-biased</option>
+          <option value="resin-biased" selected>Resin Printing</option>
         </select>
       </label>
-      <p class="hint">Scoring weights per use case.</p>
+      <p class="hint">Which print quality aspect to prioritize. Controls how overhang, surface finish, print time, and strength are weighted.</p>
       <label>
         Ranker:
         <select id="ranker-select">
@@ -250,7 +256,8 @@
           <option value="topsis">TOPSIS</option>
         </select>
       </label>
-      <p class="hint">Consensus = equal veto; TOPSIS = distance-based MCDA.</p>
+      <p class="hint">How candidates are ranked. Consensus = each metric has equal veto; Weighted sum = combines weighted metrics; TOPSIS = distance-based MCDA.</p>
+      <button id="recalc-btn" class="button button-sm" style="width:100%;margin-top:0.6rem" disabled>Recalculate</button>
     </div>
 
     <div id="progress-container" class="progress-container" style="display:none">
@@ -272,7 +279,6 @@
   <!-- Candidate top bar (overlay mode) -->
   <div class="candidate-bar" id="candidate-bar">
     <div class="bar-left">
-      <button class="button button-success" id="varita-btn" style="padding:0.35rem 1rem">✨ Varita</button>
       <button class="nav-btn" id="reset-btn" title="Reset orientation">↺ Reset</button>
     </div>
     <div class="bar-center" id="candidate-info">
