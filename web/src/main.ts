@@ -393,7 +393,7 @@ document.getElementById('export-btn')!.addEventListener('click', () => {
 function displayResults(cands: Candidate[]): void {
   resultsEl.innerHTML = `<h3>Candidates (${cands.length})</h3><ol>${cands.map((c, i) =>
     `<li class="${i === currentIndex ? 'active' : ''}" data-index="${i}">#${i + 1} — ${(c.compositeScore * 100).toFixed(0)}%` +
-    `<span class="info-icon" title="o: ${c.overhangPenalty.toFixed(0)} f: ${c.footprint.toFixed(0)} x: ${c.maxCross.toFixed(0)} s: ${(c.shadowed * 100).toFixed(0)}% · H: ${c.estHeight.toFixed(1)}mm · ${c.stability}">ⓘ</span></li>`
+    `<span class="info-icon" title="o: ${c.overhangPenalty.toFixed(0)} f: ${c.footprint.toFixed(0)} x: ${c.maxCross.toFixed(0)} s: ${(c.shadowed * 100).toFixed(0)}% q: ${c.surfaceQuality.toFixed(2)} · H: ${c.estHeight.toFixed(1)}mm · ${c.stability}">ⓘ</span></li>`
   ).join('')}</ol>`;
 }
 

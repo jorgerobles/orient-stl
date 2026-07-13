@@ -12,6 +12,7 @@ export interface Candidate {
   footprint: number;
   maxCross: number;
   shadowed: number;
+  surfaceQuality: number;
   estHeight: number;
   stability: 'stable' | 'unstable';
   stabilityMargin: number;
@@ -30,6 +31,7 @@ export interface SliceResult {
   footprint: number;
   maxCross: number;
   shadowed: number;
+  surface: number;
   quaternion: [number, number, number, number];
   height: number;
   stability: boolean;
@@ -306,6 +308,37 @@ export function footprintArea(
   return isFinite(total) ? total : 0;
 }
 
+/** H5 — surface-quality (axis-misalignment) score. Port of PrusaSlicer's
+ *  get_misalginment_score (Rotfinder.cpp:88). For each face, sums the L1 norm
+ *  of the normal expressed in the orientation frame (dn, e1, e2):
+ *    area × (|n·dn| + |n·e1| + |n·e2|)
+ *  HIGHER = better. The L1 norm is minimised (=1) when a face aligns with a
+ *  single frame axis (a big flat shelf/wall) and maximised (=√3) when the face
+ *  is diagonal to all three. PrusaSlicer maximises this to discourage large
+ *  axis-aligned shelves/walls that print poorly. O(N). */
+export function misalignmentScore(
+  dir: [number, number, number],
+  normals: Float32Array,
+  areas: Float32Array,
+): number {
+  const dnLen = Math.sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+  if (dnLen < 1e-12) return 0;
+  const dn: [number, number, number] = [dir[0] / dnLen, dir[1] / dnLen, dir[2] / dnLen];
+  const [e1, e2] = perpendicularBasis(dn);
+  const triCount = normals.length / 3;
+  let total = 0;
+  for (let i = 0; i < triCount; i++) {
+    const ni = i * 3;
+    const nx = normals[ni], ny = normals[ni + 1], nz = normals[ni + 2];
+    const align =
+      Math.abs(nx * dn[0] + ny * dn[1] + nz * dn[2]) +
+      Math.abs(nx * e1[0] + ny * e1[1] + nz * e1[2]) +
+      Math.abs(nx * e2[0] + ny * e2[1] + nz * e2[2]);
+    total += areas[i] * align;
+  }
+  return isFinite(total) ? total : 0;
+}
+
 /** H2 — max cross-section area (Z-histogram approximation). Bins each triangle
  *  by its centroid projected onto `dir` into `bins` slices, sums projected area
  *  per bin, returns the max bin. Proxy for peel force. O(N).
@@ -544,6 +577,7 @@ export function computeSlice(
     const foot = footprintArea(dir, data.normals, data.areas);
     const mcross = maxCrossSection(dir, data.positions, data.normals, data.areas, 64);
     const shad = minShadowedOverhang(dir, data.positions, data.normals, data.areas, config.criticalAngleDeg);
+    const surf = misalignmentScore(dir, data.normals, data.areas);
     const stab = checkStability(dir, data.positions);
     const height = computeHeight(dir, data.positions);
     const qYaw = computeDefaultYaw(dir, data.positions);
@@ -558,6 +592,7 @@ export function computeSlice(
       footprint: foot,
       maxCross: mcross,
       shadowed: shad,
+      surface: surf,
       quaternion: qFull,
       height,
       stability: stab.stable,
@@ -590,6 +625,7 @@ export function mergeCandidates(slices: SliceResult[][], config: ComputeConfig):
           footprint: item.footprint,
           maxCross: item.maxCross,
           shadowed: item.shadowed,
+          surfaceQuality: item.surface,
           estHeight: item.height,
           stability: item.stability ? 'stable' : 'unstable',
           stabilityMargin: item.stabilityMargin,
@@ -604,30 +640,40 @@ export function mergeCandidates(slices: SliceResult[][], config: ComputeConfig):
   return results;
 }
 
-/** Weight configuration for the composite score. */
+/** Weight configuration for the composite score. Each weight scales a
+ *  min-max-normalised component (cost form, lower = better). `wSurface` and
+ *  `wHeight` are included so every heuristic can be tuned per use case. */
 export interface ScoreWeights {
   wOverhang: number;
   wFootprint: number;
   wCross: number;
+  wSurface: number;
+  wHeight: number;
 }
 
 export const WEIGHT_PRESETS: Record<string, ScoreWeights> = {
-  'overhang-only (v1)': { wOverhang: 1, wFootprint: 0, wCross: 0 },
-  'footprint-only': { wOverhang: 0, wFootprint: 1, wCross: 0 },
-  'cross-only (peel)': { wOverhang: 0, wFootprint: 0, wCross: 1 },
-  'equal': { wOverhang: 1, wFootprint: 1, wCross: 1 },
-  'resin-biased': { wOverhang: 0.5, wFootprint: 1, wCross: 2 },
-  'overhang+footprint': { wOverhang: 1, wFootprint: 1, wCross: 0 },
+  'overhang-only (v1)': { wOverhang: 1, wFootprint: 0, wCross: 0, wSurface: 0, wHeight: 0 },
+  'footprint-only': { wOverhang: 0, wFootprint: 1, wCross: 0, wSurface: 0, wHeight: 0 },
+  'cross-only (peel)': { wOverhang: 0, wFootprint: 0, wCross: 1, wSurface: 0, wHeight: 0 },
+  'surface-only (finish)': { wOverhang: 0, wFootprint: 0, wCross: 0, wSurface: 1, wHeight: 0 },
+  'height-only (fast)': { wOverhang: 0, wFootprint: 0, wCross: 0, wSurface: 0, wHeight: 1 },
+  'equal': { wOverhang: 1, wFootprint: 1, wCross: 1, wSurface: 1, wHeight: 1 },
+  'resin-biased': { wOverhang: 0.5, wFootprint: 1, wCross: 2, wSurface: 0.5, wHeight: 0.5 },
+  'overhang+footprint': { wOverhang: 1, wFootprint: 1, wCross: 0, wSurface: 0, wHeight: 0 },
 };
 
 /** Re-rank candidates by a weighted composite (min-max normalised per component).
- *  Returns a NEW sorted array; does not mutate input. Pure — safe to call on
- *  weight-config changes without recomputing slices. */
+ *  Minimised metrics (overhang/footprint/cross/height) normalise directly;
+ *  maximised metrics (surfaceQuality) are inverted so that lower composite =
+ *  better. Returns a NEW sorted array; does not mutate input. Pure — safe to
+ *  call on weight-config changes without recomputing slices. */
 export function rankByWeights(candidates: Candidate[], weights: ScoreWeights): Candidate[] {
   if (candidates.length === 0) return [];
   let oMin = Infinity, oMax = -Infinity;
   let fMin = Infinity, fMax = -Infinity;
   let cMin = Infinity, cMax = -Infinity;
+  let sMin = Infinity, sMax = -Infinity;
+  let hMin = Infinity, hMax = -Infinity;
   for (const c of candidates) {
     if (c.overhangPenalty < oMin) oMin = c.overhangPenalty;
     if (c.overhangPenalty > oMax) oMax = c.overhangPenalty;
@@ -635,24 +681,44 @@ export function rankByWeights(candidates: Candidate[], weights: ScoreWeights): C
     if (c.footprint > fMax) fMax = c.footprint;
     if (c.maxCross < cMin) cMin = c.maxCross;
     if (c.maxCross > cMax) cMax = c.maxCross;
+    if (c.surfaceQuality < sMin) sMin = c.surfaceQuality;
+    if (c.surfaceQuality > sMax) sMax = c.surfaceQuality;
+    if (c.estHeight < hMin) hMin = c.estHeight;
+    if (c.estHeight > hMax) hMax = c.estHeight;
   }
   const oSpan = Math.max(oMax - oMin, 1e-9);
   const fSpan = Math.max(fMax - fMin, 1e-9);
   const cSpan = Math.max(cMax - cMin, 1e-9);
+  const sSpan = Math.max(sMax - sMin, 1e-9);
+  const hSpan = Math.max(hMax - hMin, 1e-9);
   const ranked = candidates.map(c => {
     const on = (c.overhangPenalty - oMin) / oSpan;
     const fn = (c.footprint - fMin) / fSpan;
     const cn = (c.maxCross - cMin) / cSpan;
-    return { ...c, compositeScore: weights.wOverhang * on + weights.wFootprint * fn + weights.wCross * cn };
+    // surfaceQuality is a MAXIMISE metric → invert so high quality = low cost.
+    const sn = (sMax - c.surfaceQuality) / sSpan;
+    const hn = (c.estHeight - hMin) / hSpan;
+    return {
+      ...c,
+      compositeScore:
+        weights.wOverhang * on +
+        weights.wFootprint * fn +
+        weights.wCross * cn +
+        weights.wSurface * sn +
+        weights.wHeight * hn,
+    };
   });
   ranked.sort((a, b) => a.compositeScore - b.compositeScore);
   return ranked;
 }
 
 /** Consensus (minimax) ranking — each candidate's compositeScore is
- *  1 - max(normalised metrics), so 1.0 = perfect (100%) and 0.0 = worst.
- *  Ordering by this favours candidates whose WORST metric is the best. Pure.
- *  Applies height-weighting (k=0.5) to the overhang penalty before consensus. */
+ *  1 - max(normalised costs), so 1.0 = perfect (100%) and 0.0 = worst.
+ *  Ordering favours candidates whose WORST metric is the best. Pure.
+ *
+ *  All five heuristics participate with equal voice. Maximise metrics
+ *  (surfaceQuality) are inverted to cost form before the max. Height enters
+ *  as its own cost term (shorter print = better). */
 export function rankByConsensus(candidates: Candidate[]): Candidate[] {
   if (candidates.length === 0) return [];
   const norm = (vals: number[]) => {
@@ -661,15 +727,21 @@ export function rankByConsensus(candidates: Candidate[]): Candidate[] {
     const span = Math.max(hi - lo, 1e-9);
     return vals.map(v => (v - lo) / span);
   };
-  const hN = norm(candidates.map(c => c.estHeight));
-  const oWeighted = candidates.map((c, i) => c.overhangPenalty * (1 + hN[i] * 0.5));
-  const oN = norm(oWeighted);
+  const invert = (vals: number[]) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const span = Math.max(hi - lo, 1e-9);
+    return vals.map(v => (hi - v) / span);
+  };
+  const oN = norm(candidates.map(c => c.overhangPenalty));
   const fN = norm(candidates.map(c => c.footprint));
   const cN = norm(candidates.map(c => c.maxCross));
   const sN = norm(candidates.map(c => c.shadowed));
+  const qN = invert(candidates.map(c => c.surfaceQuality)); // maximise → invert
+  const hN = norm(candidates.map(c => c.estHeight));
   const ranked = candidates.map((c, i) => ({
     ...c,
-    compositeScore: 1 - Math.max(oN[i], fN[i], cN[i], sN[i]),
+    compositeScore: 1 - Math.max(oN[i], fN[i], cN[i], sN[i], qN[i], hN[i]),
   }));
   ranked.sort((a, b) => b.compositeScore - a.compositeScore);
   return ranked;
