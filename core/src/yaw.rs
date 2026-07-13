@@ -152,7 +152,7 @@ pub(crate) fn bbox_min_yaw(dir: &[f32; 3], mesh: &crate::mesh::MeshData) -> [f32
 /// Per LOCKED Phase 2 decision: align candidate dir to -Y first, then apply
 /// bbox-minimizing yaw. This matches the deleted TS convention:
 ///   qFull = multiplyQuats(qYaw, qAlign(dir, [0,-1,0]))
-pub(crate) fn full_quaternion(dir: &[f32; 3], mesh: &crate::mesh::MeshData) -> [f32; 4] {
+pub fn full_quaternion(dir: &[f32; 3], mesh: &crate::mesh::MeshData) -> [f32; 4] {
     let q_yaw = bbox_min_yaw(dir, mesh);
     let q_align = quaternion_align(dir, &[0.0, -1.0, 0.0]);
     multiply_quats(&q_yaw, &q_align)

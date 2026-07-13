@@ -1,6 +1,6 @@
 const HULL_SAMPLE_TARGET: usize = 8000;
 
-pub(crate) fn sample_for_hull(vertices: &[[f32; 3]]) -> Vec<[f32; 3]> {
+pub fn sample_for_hull(vertices: &[[f32; 3]]) -> Vec<[f32; 3]> {
     let n = vertices.len();
     if n <= HULL_SAMPLE_TARGET {
         return vertices.to_vec();

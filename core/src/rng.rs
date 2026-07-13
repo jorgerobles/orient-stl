@@ -5,12 +5,12 @@
 //! `refine_orientation` reproducible per input (fixes the click-to-click
 //! non-determinism from `js_sys::Math::random()`).
 
-pub(crate) struct Rng {
+pub struct Rng {
     state: u32,
 }
 
 impl Rng {
-    pub(crate) fn new(seed: u32) -> Self {
+    pub fn new(seed: u32) -> Self {
         // xorshift cannot use 0 (absorbing state); map any zero to a constant.
         Self { state: if seed == 0 { 0xDEAD_BEEF } else { seed } }
     }
@@ -40,7 +40,7 @@ impl Rng {
 /// Hash a direction + an integer index into a u32 seed. Cheap mixing of the
 /// three direction components (expressed as scaled integers) and the index,
 /// so each (direction, index) pair maps to a distinct reproducible seed.
-pub(crate) fn seed_from_direction(dir: &[f32; 3], salt: u32) -> u32 {
+pub fn seed_from_direction(dir: &[f32; 3], salt: u32) -> u32 {
     // Quantise each component to 12 fractional bits (~0.00024° resolution).
     let qx = (dir[0] * 4096.0) as i32 as u32;
     let qy = (dir[1] * 4096.0) as i32 as u32;

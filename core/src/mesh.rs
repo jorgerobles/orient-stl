@@ -1,4 +1,4 @@
-pub(crate) struct MeshData {
+pub struct MeshData {
     pub normals: Vec<[f32; 3]>,
     pub areas: Vec<f32>,
     pub vertices: Vec<[f32; 3]>,

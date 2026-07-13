@@ -190,7 +190,7 @@ pub(crate) fn min_z_height(direction: &[f32; 3], mesh: &MeshData) -> f32 {
 /// Composite score — raw component tuple for the harness to normalise and
 /// combine. Covers H1 (overhang), H4 (footprint), H2 (max cross-section),
 /// H5 (surface quality — maximise), and H6 (print height — minimise).
-pub(crate) struct ScoreComponents {
+pub struct ScoreComponents {
     pub overhang: f32,
     pub footprint: f32,
     pub max_cross: f32,
@@ -198,7 +198,7 @@ pub(crate) struct ScoreComponents {
     pub height: f32,
 }
 
-pub(crate) fn score_components(
+pub fn score_components(
     direction: &[f32; 3],
     mesh: &MeshData,
     critical_angle_deg: f32,
@@ -226,7 +226,7 @@ pub(crate) fn score_components(
 /// `direction` (a triangle within tol_frac of its column's min counts as clear).
 ///
 /// Cost: O(N) — two passes (build field, query overhangs).
-pub(crate) fn shadowed_overhang_fraction(
+pub fn shadowed_overhang_fraction(
     direction: &[f32; 3],
     mesh: &MeshData,
     critical_angle_deg: f32,
