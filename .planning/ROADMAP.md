@@ -9,7 +9,7 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 - [x] **Phase 1: Rust WASM Core Engine + Build Toolchain** — WASM `prepare_data()` parses STL, computes hull, generates + dedupes candidates; scoring/stability moved to JS workers (architecture drift — see 01-02-SUMMARY)
 - [x] **Phase 2: Viewport + Yaw + Export (Complete UX Loop)** — three.js viewport with candidate navigation, yaw adjustment, single-file STL export
 - [x] **Phase 3: v2 Enhancements** — Height-weighted scoring, hull+sphere mode, hill-climbing refinement, multi-metric sorting, overhang heatmap (some items partially landed in Phase 1/2 drift)
-- [~] **Phase 3.5: Scoring Expansion & Refinement** — PrusaSlicer comparison surfaced two missing heuristics (H5 surface-quality/axis-misalignment, H6 print-height) + unweighted-consensus concern + non-deterministic refine; H5/H6 added (sub-plan 01 complete), profiles + seeded refine + TOPSIS in progress (sub-plan 02)
+- [x] **Phase 3.5: Scoring Expansion & Refinement** — PrusaSlicer comparison surfaced 3 missing capabilities; all delivered (H5/H6 heuristics + profiles + seeded refine + TOPSIS + UI switcher)
 - [ ] **Phase 4: v3 UX Polish** — Thumbnail strip, favorites persistence (IndexedDB), multi-STL ZIP export
 
 ## Phase Details
@@ -115,13 +115,13 @@ Plans:
   3. `ScoreComponents` (Rust) + `Candidate`/`SliceResult` (TS) carry the new fields ✅ (sub-plan 01)
   4. `rankByWeights` and `rankByConsensus` both include all five heuristics ✅ (sub-plan 01)
   5. `WEIGHT_PRESETS` includes surface-only and height-only profiles ✅ (sub-plan 01)
-  6. `core/src/rng.rs` provides seeded xorshift32 PRNG with determinism tests
-  7. `refine_orientation` accepts a `seed` param; `refine_orientation_batch` returns K×4 results
-  8. `computeSlice` calls batch refine (K=4), computes `refinedOverhang` (min) + `refineVariance` (stddev)
-  9. Weight profiles externalised to `web/src/profiles/*.json` with loader
-  10. `rankByTopsis(candidates, weights)` implements TOPSIS MCDA with tests
-  11. UI: profile dropdown + ranker dropdown in `main.ts`
-  12. All tests pass; WASM rebuilt; tsc clean
+  6. `core/src/rng.rs` provides seeded xorshift32 PRNG with determinism tests ✅
+  7. `refine_orientation` accepts a `seed` param; `refine_orientation_batch` returns K×4 results ✅
+  8. `computeSlice` calls batch refine (K=4), computes `refinedOverhang` (min) + `refineVariance` (stddev) ✅
+  9. Weight profiles externalised to `web/src/profiles/*.json` with loader ✅
+  10. `rankByTopsis(candidates, weights)` implements TOPSIS MCDA with tests ✅
+  11. UI: profile dropdown + ranker dropdown in `main.ts` ✅
+  12. All tests pass; WASM rebuilt; tsc clean ✅
 
 Plans:
 
@@ -137,7 +137,7 @@ Plans:
 | 1. Rust WASM Core Engine + Build Toolchain | 3/3 | ✅ Complete | 2026-07-11 |
 | 2. Viewport + Yaw + Export (Complete UX Loop) | 3/3 | ✅ Complete | 2026-07-11 |
 | 3. v2 Enhancements | 2/2 | ✅ Complete | - |
-| 3.5 Scoring Expansion & Refinement | 2/2 | Complete   | 2026-07-13 |
+| 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
 | 4. v3 UX Polish | 0/3 | Not started | - |
 
 **Phase 2 detail (final):**

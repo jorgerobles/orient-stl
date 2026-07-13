@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03.5-02-PLAN.md
-last_updated: "2026-07-13T08:12:52.349Z"
-last_activity: 2026-07-13 -- Phase 03.5 execution started
+status: active
+stopped_at: Phase 3.5 complete — scoring expansion & refinement delivered
+last_updated: "2026-07-13T10:15:00.000Z"
+last_activity: "2026-07-13 — Phase 3.5 verified: 12/12 success criteria met; 3 rankers, 8 profiles, seeded refine, UI switcher"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 80
+  total_plans: 11
+  completed_plans: 11
+  percent: 85
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 03.5 — scoring-expansion
+**Current focus:** Phase 4 — v3 UX Polish (next)
 
 ## Current Position
 
-Phase: 03.5 (scoring-expansion) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-07-13 -- Phase 03.5 execution started
+Phase: 3.5 (scoring-expansion) — ✅ Complete
+Plan: 2 of 2 (both complete)
+Status: Verified — 12/12 success criteria met
+Last activity: 2026-07-13 -- Phase 3.5 verified; profiles, seeded refine, TOPSIS, UI switcher delivered
 
-Progress: [██████████░░░░] ~55%
+Progress: [██████████████████] ~85%
 
 ### Phase 2 status (final)
 
@@ -42,8 +42,7 @@ Progress: [██████████░░░░] ~55%
 
 ### Next step
 
-Wave 1: Plan 03-01 — Rust WASM enhancements (Fibonacci sphere + hill-climb refine)
-Wave 2: Plan 03-02 — Interactive overlay (height-weight scoring, hull+sphere toggle, drag-to-rotate, Varita Mágica)
+Phase 4 — v3 UX Polish (Thumbnail Strip, Favorites, ZIP Export)
 
 ## Performance Metrics
 
@@ -59,9 +58,9 @@ Wave 2: Plan 03-02 — Interactive overlay (height-weight scoring, hull+sphere t
 |-------|-------|-------|----------|
 | 1. Rust WASM Core Engine + Build Toolchain | 3/3 ✅ | — | — |
 | 2. Viewport + Yaw + Export | 3/3 ✅ | — | — |
-| 3. v2 Enhancements | 0/2 | — | — |
+| 3. v2 Enhancements | 2/2 ✅ | — | — |
 | 4. v3 UX Polish | 0/3 | — | — |
-| Phase 03.5 P02 | 32 min | 3 tasks | 17 files |
+| 3.5 Scoring Expansion & Refinement | 2/2 ✅ | 32 min | 3 tasks + backfill |
 
 ## Accumulated Context
 
@@ -85,9 +84,11 @@ Recent decisions affecting current work:
 - **[Phase 3.5]** PrusaSlicer codegraph comparison (Rotfinder.cpp) surfaced 2 missing heuristics: H5 surface-quality (axis-misalignment, Prusa "Best surface quality") + H6 print-height (Prusa "Lowest Z height"). Both added with TS+Rust parity; both rankers now cover all 5 metrics.
 - **[Phase 3.5]** `rankByConsensus` rewritten: replaced `overhang × (1 + hN×0.5)` fudge with height as its own cost term in the max(); surfaceQuality inverted to cost form. All five heuristics now have equal veto power.
 - **[Phase 3.5]** Research: MCDA literature confirms equal-weight minimax is brittle (dictatorial veto); configurable per-metric weights + TOPSIS are the textbook fixes. Follow-on work: externalise profiles to JSON, add TOPSIS ranker, seed refine determinism + variance metric.
-- [Phase 03.5]: TOPSIS MCDA uses vector normalisation + Euclidean distance to ideal; closeness [0,1]
-- [Phase 03.5]: Weight profiles externalised to JSON via import.meta.glob (build-time, no runtime fetch)
-- [Phase 03.5]: RefineFn callback injection enables pipeline testing without WASM dependency
+- **[Phase 3.5 P02]** TOPSIS MCDA uses vector normalisation + Euclidean distance to ideal; closeness [0,1]
+- **[Phase 3.5 P02]** Weight profiles externalised to JSON via import.meta.glob (build-time, no runtime fetch)
+- **[Phase 3.5 P02]** RefineFn callback injection enables pipeline testing without WASM dependency
+- **[Phase 3.5 P02]** xorshift32 PRNG eliminates click-to-click non-determinism in Varita Mágica refine
+- **[Phase 3.5 P02]** K=4 batch refine with refinedOverhang (min) + refineVariance (stddev) per candidate
 
 ### Pending Todos
 
