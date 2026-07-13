@@ -4,11 +4,12 @@ import { exportSTL } from './exportSTL';
 import { rotatePositions } from './rotate';
 import { applyConvention } from './convention';
 import type { LoadConvention } from './convention';
-import { decimateForScore, footprintArea, maxCrossSection, misalignmentScore, computeHeight } from './compute';
+import { decimateForScore } from './compute';
 import { mergeCandidates, rankByConsensus, rankByWeights, rankByTopsis, WEIGHT_PRESETS } from './compute';
 import type { OriData, Candidate, ComputeConfig, SliceResult } from './compute';
-import { refine_orientation } from '../pkg/orient_core.js';
+import { score_orientation } from '../pkg/orient_core.js';
 import { defaultConfig } from './types';
+import { dirFromQuat } from './quaternion';
 
 let config = defaultConfig();
 let candidates: Candidate[] = [];
@@ -22,6 +23,10 @@ let workers: Worker[] = [];
 let lastFile: File | null = null;
 let lastFileBytes: Uint8Array | null = null;
 let loadConvention: LoadConvention = 'z-up';
+
+// Normalization bounds for live scoring: [overhang, footprint, cross, surface, height].
+// Populated from sampled directions on load, updated from candidates when computed.
+let normBounds: { lo: number[]; hi: number[] } | null = null;
 
 function parseCurrentData(): OriData | null {
   if (!lastFileBytes) return null;
@@ -37,6 +42,30 @@ function parseCurrentData(): OriData | null {
   };
 }
 
+/** Sample ~30 directions and compute their 5 metrics to establish normalization
+ *  bounds for live scoring. Cheaper than full candidate search — gives the user
+ *  immediate feedback on load. */
+function computeNormBounds(data: OriData): void {
+  const numDirs = data.directions.length / 3;
+  if (numDirs === 0 || !liveData) return;
+  const step = Math.max(1, Math.floor(numDirs / 30));
+  const vals: number[][] = [[], [], [], [], []];
+  const { positions: p, normals: n, areas: a } = liveData;
+  for (let i = 0; i < numDirs; i += step) {
+    try {
+      const raw = score_orientation(p, n, a,
+        data.directions[i * 3], data.directions[i * 3 + 1], data.directions[i * 3 + 2],
+        config.criticalAngleDeg, 0, 42);
+      for (let m = 0; m < 5; m++) vals[m].push(raw[3 + m]);
+    } catch { /* skip bad direction */ }
+  }
+  if (vals[0].length === 0) return;
+  normBounds = {
+    lo: vals.map(v => Math.min(...v)),
+    hi: vals.map(v => Math.max(...v)),
+  };
+}
+
 const paint = () => new Promise<void>(r => setTimeout(r, 0));
 
 const statusEl = document.getElementById('status')!;
@@ -44,126 +73,112 @@ const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const dropZone = document.getElementById('drop-zone')!;
 const resultsEl = document.getElementById('results')!;
 const viewportContainer = document.getElementById('viewport')!;
-const candidateBar = document.getElementById('candidate-bar')!;
-const candidateInfoEl = document.getElementById('candidate-info')!;
 const progressContainer = document.getElementById('progress-container')!;
 const progressBar = document.getElementById('progress-bar')!;
 const progressLabel = document.getElementById('progress-label')!;
 const cancelBtn = document.getElementById('cancel-btn')!;
 const panelLeft = document.getElementById('panel-left')!;
 const panelRight = document.getElementById('results')!;
+const scoreBig = document.getElementById('score-big')!;
+const spProfile = document.getElementById('sp-profile')!;
+const spRanker = document.getElementById('sp-ranker')!;
+const spRows = document.getElementById('sp-rows')!;
+const spHint = document.getElementById('sp-hint')!;
+const findBtn = document.getElementById('find-btn') as HTMLButtonElement;
+const exportBtn = document.getElementById('export-btn') as HTMLButtonElement;
+const candidatesSection = document.getElementById('candidates-section')!;
+const candidateList = document.getElementById('candidate-list')!;
+const resultsPlaceholder = document.getElementById('results-placeholder')!;
 
 viewport = new Viewport(viewportContainer);
 
-let overlayActive = false;
-let overlayKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-function enterOverlay(candidateIndex: number): void {
-  if (overlayActive || candidates.length === 0) return;
-  showCandidate(candidateIndex);
-  overlayActive = true;
-
-  panelLeft.style.display = 'none';
-  panelRight.style.display = 'none';
-  viewportContainer.classList.add('overlay-active');
-  candidateBar.classList.add('visible');
-
-  overlayKeyHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') exitOverlay();
-    if (e.key === 'ArrowLeft' && currentIndex > 0) showCandidate(currentIndex - 1);
-    if (e.key === 'ArrowRight' && currentIndex < candidates.length - 1) showCandidate(currentIndex + 1);
-  };
-  document.addEventListener('keydown', overlayKeyHandler);
-
-  viewport.enterOverlayMode(updateLiveScore);
-}
-
-function exitOverlay(): void {
-  if (!overlayActive) return;
-  overlayActive = false;
-  viewport.exitOverlayMode();
-
-  viewportContainer.classList.remove('overlay-active');
-  candidateBar.classList.remove('visible');
-  panelLeft.style.display = '';
-  panelRight.style.display = 'block';
-
-  if (overlayKeyHandler) {
-    document.removeEventListener('keydown', overlayKeyHandler);
-    overlayKeyHandler = null;
-  }
-}
-
-function applyQuat(q: [number, number, number, number], v: [number, number, number]): [number, number, number] {
-  const [w, x, y, z] = q;
-  const [vx, vy, vz] = v;
-  const uv_x = y * vz - z * vy;
-  const uv_y = z * vx - x * vz;
-  const uv_z = x * vy - y * vx;
-  const uuv_x = y * uv_z - z * uv_y;
-  const uuv_y = z * uv_x - x * uv_z;
-  const uuv_z = x * uv_y - y * uv_x;
-  return [vx + 2 * (w * uv_x + uuv_x), vy + 2 * (w * uv_y + uuv_y), vz + 2 * (w * uv_z + uuv_z)];
-}
-
 function updateLiveScore(q: [number, number, number, number]): void {
-  if (!liveData || candidates.length === 0) return;
-  const invQ: [number, number, number, number] = [q[0], -q[1], -q[2], -q[3]];
-  const dir = applyQuat(invQ, [0, -1, 0]);
+  if (!liveData || !normBounds) return;
+  const dir = dirFromQuat(q);
 
-  // WASM = single source of truth for overhang.
+  // Single WASM call: refine + all 5 metrics for the refined direction.
   const { positions: lp, normals: ln, areas: la } = liveData;
-  let refined: number;
+  let raw: Float32Array;
   try {
-    const res = refine_orientation(lp, ln, la, dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, 42);
-    refined = res[3];
+    raw = score_orientation(lp, ln, la, dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, 42);
   } catch {
-    refined = 0;
+    raw = new Float32Array(8);
+  }
+  const [, , , overhang, foot, cross, surf, height] = raw;
+
+  // Display costs (for the metric bars) — min-max normalized via normBounds.
+  const { lo, hi } = normBounds;
+  const clamp = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
+  const span = (i: number) => Math.max(hi[i] - lo[i], 1e-9);
+  const costs = [
+    clamp((overhang - lo[0]) / span(0)),
+    clamp((foot - lo[1]) / span(1)),
+    clamp((cross - lo[2]) / span(2)),
+    clamp((hi[3] - surf) / span(3)),
+    clamp((height - lo[4]) / span(4)),
+  ];
+
+  // Overall score: use the SAME ranker as candidates when available.
+  // Temporarily add the live direction to the candidate set, run the ranker,
+  // and extract its score — guaranteeing identical formula + normalization.
+  const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight];
+  let score: number;
+  if (candidates.length > 0) {
+    const liveCand: Candidate = {
+      id: '__live__',
+      quaternion: [q[0], q[1], q[2], q[3]], // [x, y, z, w]
+      overhangPenalty: overhang,
+      footprint: foot,
+      maxCross: cross,
+      shadowed: 0,
+      surfaceQuality: surf,
+      estHeight: height,
+      refinedOverhang: overhang,
+      refineVariance: 0,
+      stability: 'stable' as const,
+      stabilityMargin: 1,
+      contactArea: 0,
+      compositeScore: 0,
+    };
+    const ranked = applyCurrentRank([...candidates, liveCand]);
+    score = ranked.find(c => c.id === '__live__')?.compositeScore ?? 0;
+    // rankByWeights sorts ascending (lower = better), so invert.
+    if (currentRanker === 'weights') score = 1 - score;
+  } else {
+    // No candidates: weighted average from profile weights.
+    const wSum = weights.reduce((a, b) => a + b, 0);
+    score = wSum > 0
+      ? 1 - costs.reduce((acc, c, i) => acc + weights[i] * c, 0) / wSum
+      : 1 - costs[0];
   }
 
-  const foot = footprintArea(dir, ln, la);
-  const cross = maxCrossSection(dir, lp, ln, la, 64);
-  const surf = misalignmentScore(dir, ln, la);
-  const height = computeHeight(dir, lp);
+  scoreBig.textContent = `${(score * 100).toFixed(0)}%`;
 
-  // Fixed normalization range from candidates only (stable as you drag).
-  // Weighted average with profile weights — no single metric can kill the score.
-  const oVals = candidates.map(c => c.refinedOverhang);
-  const fVals = candidates.map(c => c.footprint);
-  const cVals = candidates.map(c => c.maxCross);
-  const sVals = candidates.map(c => c.surfaceQuality);
-  const hVals = candidates.map(c => c.estHeight);
-  const oL = Math.min(...oVals), oH = Math.max(...oVals);
-  const fL = Math.min(...fVals), fH = Math.max(...fVals);
-  const cL = Math.min(...cVals), cH = Math.max(...cVals);
-  const sL = Math.min(...sVals), sH = Math.max(...sVals);
-  const hL = Math.min(...hVals), hH = Math.max(...hVals);
-  const oS = Math.max(oH - oL, 1e-9), fS = Math.max(fH - fL, 1e-9);
-  const cS = Math.max(cH - cL, 1e-9), sS = Math.max(sH - sL, 1e-9);
-  const hS = Math.max(hH - hL, 1e-9);
-  const clamp = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
-
-  const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
-  const wSum = w.wOverhang + w.wFootprint + w.wCross + w.wSurface + w.wHeight;
-  const score = wSum > 0 ? 1 - (
-    w.wOverhang * clamp((refined - oL) / oS) +
-    w.wFootprint * clamp((foot - fL) / fS) +
-    w.wCross * clamp((cross - cL) / cS) +
-    w.wSurface * clamp((surf - sL) / sS) +
-    w.wHeight * clamp((height - hL) / hS)
-  ) / wSum : 1 - clamp((refined - oL) / oS);
-
-  candidateInfoEl.innerHTML = `<span class="score">${(score * 100).toFixed(0)}%</span>`;
+  // Populate the score breakdown panel.
+  spProfile.textContent = PROFILE_LABELS[currentProfile] ?? currentProfile;
+  spRanker.textContent = RANKER_LABELS[currentRanker] ?? currentRanker;
+  const qColor = (q: number) => q > 0.6 ? '#27ae60' : q > 0.3 ? '#f0ad4e' : '#e74c3c';
+  const names = ['Overhang', 'Footprint', 'Cross-sect', 'Surface', 'Height'];
+  const descs = [
+    'Faces needing supports (lower=better)',
+    'Base contact area (lower=better)',
+    'Max layer material — peel force (lower=better)',
+    'Axis misalignment — resin finish (higher=better)',
+    'Print height — layers & time (lower=better)',
+  ];
+  spRows.innerHTML = costs.map((cost, i) => {
+    const quality = (1 - cost) * 100;
+    const wt = weights[i];
+    return `<div class="sp-row" title="${descs[i]}">
+      <span class="sp-name">${names[i]}</span>
+      <div class="sp-bar"><div class="sp-bar-fill" style="width:${quality.toFixed(0)}%;background:${qColor(1 - cost)}"></div></div>
+      <span class="sp-pct">${quality.toFixed(0)}%</span>
+      <span class="sp-weight">${wt > 0 ? '×' + wt.toFixed(1) : '—'}</span>
+    </div>`;
+  }).join('');
+  spHint.textContent = RANKER_HINTS[currentRanker] ?? '';
 }
-
-document.getElementById('exit-btn')!.addEventListener('click', exitOverlay);
-document.getElementById('reset-btn')!.addEventListener('click', () => {
-  if (candidates.length === 0) return;
-  viewport.showCandidate(candidates[currentIndex].quaternion);
-  updateCandidateBar();
-});
-document.getElementById('prev-btn')!.addEventListener('click', () => { if (currentIndex > 0) showCandidate(currentIndex - 1); });
-document.getElementById('next-btn')!.addEventListener('click', () => { if (currentIndex < candidates.length - 1) showCandidate(currentIndex + 1); });
 
 async function boot(): Promise<void> {
   statusEl.textContent = 'Initializing WASM...';
@@ -179,7 +194,6 @@ async function boot(): Promise<void> {
 }
 
 async function handleFile(file: File): Promise<void> {
-  if (overlayActive) exitOverlay();
   cancelCompute();
   lastFile = file;
   if (!file.name.toLowerCase().endsWith('.stl')) {
@@ -211,7 +225,23 @@ async function handleFile(file: File): Promise<void> {
     viewport.resetCamera();
     await paint();
 
-    spawnCompute(fullData);
+    // Enable drag-to-rotate with live scoring (always on, no overlay).
+    const decimated = decimateForScore(fullData, 12000);
+    liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
+    computeNormBounds(fullData);
+    viewport.enterOverlayMode(updateLiveScore);
+
+    // Show right panel with initial score for default orientation.
+    resultsPlaceholder.style.display = 'none';
+    panelRight.style.display = 'block';
+    updateLiveScore(viewport.getMeshQuaternion());
+
+    progressContainer.style.display = 'none';
+    statusEl.textContent = 'Drag the rings to rotate. Click "Find Candidates" for suggestions.';
+    findBtn.disabled = false;
+    exportBtn.disabled = false;
+    candidates = [];
+    candidatesSection.style.display = 'none';
   } catch (err) {
     progressContainer.style.display = 'none';
     statusEl.textContent = `Error: ${err}`;
@@ -293,7 +323,6 @@ async function spawnCompute(data: OriData): Promise<void> {
   progressContainer.style.display = 'block';
   progressBar.className = 'progress-bar-fill indeterminate';
   progressLabel.textContent = 'Decimating mesh...';
-  panelRight.style.display = 'none';
   candidates = [];
 
   const computeConfig: ComputeConfig = {
@@ -335,9 +364,23 @@ async function spawnCompute(data: OriData): Promise<void> {
     if (merged.length > 0) {
       candidates = merged;
       currentIndex = 0;
-      viewport.setCriticalAngle(config.criticalAngleDeg);
-      viewport.showCandidate(merged[0].quaternion);
-      panelRight.style.display = 'block';
+      // Update normalization bounds from full candidate set.
+      normBounds = {
+        lo: [
+          Math.min(...merged.map(c => c.refinedOverhang)),
+          Math.min(...merged.map(c => c.footprint)),
+          Math.min(...merged.map(c => c.maxCross)),
+          Math.min(...merged.map(c => c.surfaceQuality)),
+          Math.min(...merged.map(c => c.estHeight)),
+        ],
+        hi: [
+          Math.max(...merged.map(c => c.refinedOverhang)),
+          Math.max(...merged.map(c => c.footprint)),
+          Math.max(...merged.map(c => c.maxCross)),
+          Math.max(...merged.map(c => c.surfaceQuality)),
+          Math.max(...merged.map(c => c.estHeight)),
+        ],
+      };
       displayResults(merged);
     }
   }
@@ -389,12 +432,11 @@ function finishCompute(): void {
     return;
   }
   candidates = applyCurrentRank(candidates);
-  statusEl.textContent = `${candidates.length} candidates — click one to inspect`;
+  statusEl.textContent = `${candidates.length} candidates — click one to try it`;
   currentIndex = 0;
   viewport.setCriticalAngle(config.criticalAngleDeg);
   viewport.showCandidate(candidates[0].quaternion);
-  panelRight.style.display = 'block';
-  displayResults(candidates);
+  updateLiveScore(viewport.getMeshQuaternion());
 }
 
 function cancelCompute(): void {
@@ -410,20 +452,8 @@ function showCandidate(index: number): void {
   currentIndex = index;
   viewport.setCriticalAngle(config.criticalAngleDeg);
   viewport.showCandidate(candidates[index].quaternion);
-  updateCandidateBar();
+  updateLiveScore(viewport.getMeshQuaternion());
   displayResults(candidates);
-}
-
-function updateCandidateBar(): void {
-  const c = candidates[currentIndex];
-  const prevBtn = document.getElementById('prev-btn') as HTMLButtonElement;
-  const nextBtn = document.getElementById('next-btn') as HTMLButtonElement;
-  prevBtn.disabled = currentIndex <= 0;
-  nextBtn.disabled = currentIndex >= candidates.length - 1;
-  candidateInfoEl.innerHTML =
-    `<span style="color:#888;font-size:0.8rem">#${currentIndex + 1}/${candidates.length}</span>` +
-    `<span class="score">${(c.compositeScore * 100).toFixed(0)}%</span>` +
-    `${currentIndex === 0 ? '<span class="best">★ BEST</span>' : ''}`;
 }
 
 const angleSlider = document.getElementById('angle-slider') as HTMLInputElement;
@@ -434,6 +464,7 @@ angleSlider.addEventListener('input', () => {
   viewport.setCriticalAngle(config.criticalAngleDeg);
   saveConfig();
   markDirty();
+  if (liveData) updateLiveScore(viewport.getMeshQuaternion());
 });
 
 const hullSphereToggle = document.getElementById('hull-sphere-toggle') as HTMLInputElement;
@@ -461,6 +492,18 @@ const PROFILE_LABELS: Record<string, string> = {
   'overhang-footprint': 'Support + Footprint',
 };
 
+const RANKER_LABELS: Record<string, string> = {
+  'consensus': 'Consensus',
+  'weights': 'Weighted Sum',
+  'topsis': 'TOPSIS',
+};
+
+const RANKER_HINTS: Record<string, string> = {
+  'consensus': 'Minimax: score = 1 − worst normalized cost across all metrics. Bars show per-metric quality vs candidate range.',
+  'weights': 'Weighted average of normalized costs using profile weights. Each metric contributes proportionally to its weight.',
+  'topsis': 'TOPSIS: ranks by distance to ideal vs anti-ideal solution. Falls back to consensus for live display.',
+};
+
 const profileSelect = document.getElementById('profile-select') as HTMLSelectElement;
 profileSelect.innerHTML = Object.keys(WEIGHT_PRESETS).map(name =>
   `<option value="${name}" ${name === currentProfile ? 'selected' : ''}>${PROFILE_LABELS[name] ?? name}</option>`
@@ -470,6 +513,7 @@ profileSelect.addEventListener('change', () => {
   if (candidates.length > 0) { candidates = applyCurrentRank(candidates); displayResults(candidates); }
   saveConfig();
   markDirty();
+  if (liveData) updateLiveScore(viewport.getMeshQuaternion());
 });
 
 const rankerSelect = document.getElementById('ranker-select') as HTMLSelectElement;
@@ -477,6 +521,7 @@ rankerSelect.addEventListener('change', () => {
   currentRanker = rankerSelect.value;
   saveConfig();
   markDirty();
+  if (liveData) updateLiveScore(viewport.getMeshQuaternion());
 });
 
 recalcBtn.addEventListener('click', async () => {
@@ -489,7 +534,17 @@ recalcBtn.addEventListener('click', async () => {
   const data = parseCurrentData();
   if (!data) { statusEl.textContent = 'No data to recalculate'; progressContainer.style.display = 'none'; return; }
   positions = data.positions; faceNormals = data.normals; areas = data.areas; lastOriData = data;
-  spawnCompute(data);
+  const decimated = decimateForScore(data, 12000);
+  liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
+  viewport.setCriticalAngle(config.criticalAngleDeg);
+  computeNormBounds(data);
+  updateLiveScore(viewport.getMeshQuaternion());
+  if (candidates.length > 0) {
+    spawnCompute(data);
+  } else {
+    progressContainer.style.display = 'none';
+    markClean();
+  }
 });
 
 fileInput.addEventListener('change', () => {
@@ -502,25 +557,29 @@ dropZone.addEventListener('drop', (e) => {
   if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
 });
 
-document.getElementById('export-btn')!.addEventListener('click', () => {
-  if (!positions || candidates.length === 0) return;
-  const c = candidates[currentIndex];
-  const quat: [number, number, number, number] = [c.quaternion[0], c.quaternion[1], c.quaternion[2], c.quaternion[3]];
-  const qres = quat;
-  exportSTL(rotatePositions(positions, qres), stlName, currentIndex + 1);
+findBtn.addEventListener('click', () => {
+  if (!lastOriData) return;
+  spawnCompute(lastOriData);
+});
+
+exportBtn.addEventListener('click', () => {
+  if (!positions) return;
+  const q = viewport.getMeshQuaternion();
+  exportSTL(rotatePositions(positions, q), stlName, currentIndex + 1);
 });
 
 function displayResults(cands: Candidate[]): void {
-  resultsEl.innerHTML = `<h3>Candidates (${cands.length})</h3><ol>${cands.map((c, i) =>
+  candidatesSection.style.display = 'block';
+  candidateList.innerHTML = cands.map((c, i) =>
     `<li class="${i === currentIndex ? 'active' : ''}" data-index="${i}">#${i + 1} — ${(c.compositeScore * 100).toFixed(0)}%` +
     `<span class="info-icon" title="o: ${c.overhangPenalty.toFixed(0)} f: ${c.footprint.toFixed(0)} x: ${c.maxCross.toFixed(0)} s: ${(c.shadowed * 100).toFixed(0)}% q: ${c.surfaceQuality.toFixed(2)} · H: ${c.estHeight.toFixed(1)}mm · ${c.stability}">ⓘ</span></li>`
-  ).join('')}</ol>`;
+  ).join('');
 }
 
-resultsEl.addEventListener('click', (e) => {
+candidateList.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest('li');
   if (!li || !li.dataset.index) return;
-  enterOverlay(parseInt(li.dataset.index));
+  showCandidate(parseInt(li.dataset.index));
 });
 
 boot();

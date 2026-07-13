@@ -438,7 +438,7 @@ export class Viewport {
           let delta = a2 - a1;
           if (delta > Math.PI) delta -= 2 * Math.PI;
           if (delta < -Math.PI) delta += 2 * Math.PI;
-          if (this.dragMode === 'camera') delta = -delta;
+          if (this.dragMode !== 'camera') delta = -delta;
           this.cumulativeAngle += delta;
           const rotQ = new THREE.Quaternion().setFromAxisAngle(axis, this.cumulativeAngle);
           this.mesh.quaternion.copy(rotQ.multiply(this.overlayStartQuat));

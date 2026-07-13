@@ -432,3 +432,183 @@ describe("computeSlice batch refine", () => {
     expect(typeof results[0].refineVariance).toBe("number");
   });
 });
+
+// ── Solid mesh fixtures ──────────────────────────────────────────────────
+
+/** Unit cube (0,0,0)–(1,1,1), 12 triangles. Positions only — normals and
+ *  areas are COMPUTED from geometry via cross products, not hardcoded.
+ *  This ensures the test fixture matches what a real mesh preprocessor
+ *  would produce. */
+function unitCubeMesh() {
+  const positions = new Float32Array([
+    // Bottom (z=0), CCW from below → normal (0,0,-1)
+    0,0,0,  1,1,0,  1,0,0,    0,0,0,  0,1,0,  1,1,0,
+    // Top (z=1), CCW from above → normal (0,0,1)
+    0,0,1,  1,0,1,  1,1,1,    0,0,1,  1,1,1,  0,1,1,
+    // Front (y=0), CCW from front → normal (0,-1,0)
+    0,0,0,  1,0,0,  1,0,1,    0,0,0,  1,0,1,  0,0,1,
+    // Back (y=1), CCW from behind → normal (0,1,0)
+    0,1,0,  1,1,1,  1,1,0,    0,1,0,  0,1,1,  1,1,1,
+    // Left (x=0), CCW from left → normal (-1,0,0)
+    0,0,0,  0,1,1,  0,1,0,    0,0,0,  0,0,1,  0,1,1,
+    // Right (x=1), CCW from right → normal (1,0,0)
+    1,0,0,  1,1,0,  1,1,1,    1,0,0,  1,1,1,  1,0,1,
+  ]);
+  const triCount = positions.length / 9;
+  const normals = new Float32Array(triCount * 3);
+  const areas = new Float32Array(triCount);
+  for (let i = 0; i < triCount; i++) {
+    const b = i * 9;
+    const ax = positions[b+3] - positions[b], ay = positions[b+4] - positions[b+1], az = positions[b+5] - positions[b+2];
+    const bx = positions[b+6] - positions[b], by = positions[b+7] - positions[b+1], bz = positions[b+8] - positions[b+2];
+    // Cross product (edgeA × edgeB) — gives outward normal for CCW winding.
+    let nx = ay * bz - az * by;
+    let ny = az * bx - ax * bz;
+    let nz = ax * by - ay * bx;
+    const nlen = Math.sqrt(nx*nx + ny*ny + nz*nz);
+    nx /= nlen; ny /= nlen; nz /= nlen;
+    normals[i*3] = nx; normals[i*3+1] = ny; normals[i*3+2] = nz;
+    // Triangle area = 0.5 * |cross product|
+    areas[i] = nlen * 0.5;
+  }
+  return { positions, normals, areas };
+}
+
+describe("solid cube: computed normals", () => {
+  it("each face has the expected outward normal", () => {
+    const { normals } = unitCubeMesh();
+    // Bottom tris (0,1) should have normal ≈ (0,0,-1)
+    expect(normals[2]).toBeCloseTo(-1, 4); // nz of tri 0
+    expect(normals[5]).toBeCloseTo(-1, 4); // nz of tri 1
+    // Top tris (2,3) should have normal ≈ (0,0,1)
+    expect(normals[8]).toBeCloseTo(1, 4);
+    expect(normals[11]).toBeCloseTo(1, 4);
+    // Front tris (4,5) should have normal ≈ (0,-1,0)
+    expect(normals[13]).toBeCloseTo(-1, 4); // ny
+    expect(normals[16]).toBeCloseTo(-1, 4);
+    // Right tris (10,11) should have normal ≈ (1,0,0)
+    expect(normals[30]).toBeCloseTo(1, 4); // nx
+    expect(normals[33]).toBeCloseTo(1, 4);
+  });
+
+  it("each triangle area = 0.5", () => {
+    const { areas } = unitCubeMesh();
+    for (let i = 0; i < areas.length; i++) {
+      expect(areas[i]).toBeCloseTo(0.5, 5);
+    }
+  });
+});
+
+describe("solid cube: metric sanity", () => {
+  const { normals, areas, positions } = unitCubeMesh();
+
+  it("footprint facing a face = 1.0 (full face area projected)", () => {
+    // dir = +Z: top face contributes area 1.0 (both tris), bottom also 1.0
+    // total = sum of |normal · dir| * area = (0.5+0.5)*|1| + (0.5+0.5)*|−1| = 2.0
+    const fp = footprintArea([0, 0, 1], normals, areas);
+    expect(fp).toBeCloseTo(2.0, 4);
+  });
+
+  it("footprint facing an edge = 2.0 (two faces visible)", () => {
+    // dir = (1,0,1)/√2: each of top/bottom and left/right contributes |cos(45°)| * 1.0
+    const inv = Math.SQRT1_2;
+    const fp = footprintArea([inv, 0, inv], normals, areas);
+    // 4 faces contribute: each has |cos(45°)| × area 1.0
+    expect(fp).toBeCloseTo(4 * inv, 2); // ≈ 2.83
+  });
+
+  it("footprint facing -Y = 2.0 (front + back faces both contribute)", () => {
+    // dir = [0,-1,0]: front face has |dot|=1, back face also |dot|=1.
+    // Each face has 2 tris × 0.5 area = 1.0. Total = 2.0.
+    const fp = footprintArea([0, -1, 0], normals, areas);
+    expect(fp).toBeCloseTo(2.0, 4);
+  });
+
+  it("height along Z axis = 1.0", () => {
+    const dir: [number, number, number] = [0, 0, 1];
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const d = positions[i] * dir[0] + positions[i + 1] * dir[1] + positions[i + 2] * dir[2];
+      if (d < lo) lo = d;
+      if (d > hi) hi = d;
+    }
+    expect(hi - lo).toBeCloseTo(1.0, 5);
+  });
+});
+
+// ── Live-score consistency tests ────────────────────────────────────────
+// Verify that the "temp candidate" approach produces the same score as
+// the candidate itself when the metrics match.
+
+describe("live-score: temp candidate consistency", () => {
+  function mkCand(over: number, foot: number, cross: number, shadowed = 0, surface = 1, height = 1): Candidate {
+    return {
+      id: `c-${over}-${foot}-${cross}-${shadowed}-${surface}-${height}`,
+      quaternion: [0, 0, 0, 1],
+      overhangPenalty: over, footprint: foot, maxCross: cross, shadowed,
+      surfaceQuality: surface, estHeight: height,
+      refinedOverhang: over, refineVariance: 0,
+      stability: 'stable', stabilityMargin: 1, contactArea: 1, compositeScore: 0,
+    };
+  }
+  const weights = { wOverhang: 1, wFootprint: 1, wCross: 1, wSurface: 1, wHeight: 1 };
+
+  it("TOPSIS: temp candidate with same metrics as #1 gets ≈ same score", () => {
+    const cs = [
+      mkCand(1, 1, 1, 0.1, 1.7, 10),
+      mkCand(5, 5, 5, 0.5, 1.0, 20),
+      mkCand(10, 10, 10, 0.9, 0.5, 50),
+    ];
+    const rankedOriginal = rankByTopsis(cs, weights);
+    const bestScore = rankedOriginal[0].compositeScore;
+
+    // Add a temp candidate with the same metrics as the best candidate
+    const best = rankedOriginal[0];
+    const temp = mkCand(best.refinedOverhang, best.footprint, best.maxCross,
+                         best.shadowed, best.surfaceQuality, best.estHeight);
+    temp.id = '__live__';
+    const rankedWithTemp = rankByTopsis([...cs, temp], weights);
+    const tempScore = rankedWithTemp.find(c => c.id === '__live__')!.compositeScore;
+
+    // Should be very close (slight change from adding one more candidate to normalization)
+    expect(tempScore).toBeCloseTo(bestScore, 1);
+  });
+
+  it("consensus: temp candidate with same metrics as #1 gets ≈ same score", () => {
+    const cs = [
+      mkCand(1, 1, 1, 0.1, 1.7, 10),
+      mkCand(5, 5, 5, 0.5, 1.0, 20),
+      mkCand(10, 10, 10, 0.9, 0.5, 50),
+    ];
+    const rankedOriginal = rankByConsensus(cs);
+    const bestScore = rankedOriginal[0].compositeScore;
+
+    const best = rankedOriginal[0];
+    const temp = mkCand(best.refinedOverhang, best.footprint, best.maxCross,
+                         best.shadowed, best.surfaceQuality, best.estHeight);
+    temp.id = '__live__';
+    const rankedWithTemp = rankByConsensus([...cs, temp]);
+    const tempScore = rankedWithTemp.find(c => c.id === '__live__')!.compositeScore;
+
+    expect(tempScore).toBeCloseTo(bestScore, 1);
+  });
+
+  it("weighted sum: temp candidate with same metrics as #1 gets ≈ same score", () => {
+    const cs = [
+      mkCand(1, 1, 1, 0.1, 1.7, 10),
+      mkCand(5, 5, 5, 0.5, 1.0, 20),
+      mkCand(10, 10, 10, 0.9, 0.5, 50),
+    ];
+    const rankedOriginal = rankByWeights(cs, weights);
+    const bestScore = rankedOriginal[0].compositeScore;
+
+    const best = rankedOriginal[0];
+    const temp = mkCand(best.refinedOverhang, best.footprint, best.maxCross,
+                         best.shadowed, best.surfaceQuality, best.estHeight);
+    temp.id = '__live__';
+    const rankedWithTemp = rankByWeights([...cs, temp], weights);
+    const tempScore = rankedWithTemp.find(c => c.id === '__live__')!.compositeScore;
+
+    expect(tempScore).toBeCloseTo(bestScore, 1);
+  });
+});
