@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: active
-stopped_at: Phase 3.5 in progress — sub-plan 01 (H5/H6 backfill) complete; sub-plan 02 (profiles, seeded refine, TOPSIS) being planned
-last_updated: "2026-07-13T09:00:00.000Z"
-last_activity: "2026-07-13 — Phase 3.5 reopened to encompass profiles + seeded refine + TOPSIS; rng.rs spike in place; GSD cycle running"
+status: executing
+stopped_at: Completed 03.5-02-PLAN.md
+last_updated: "2026-07-13T08:12:52.349Z"
+last_activity: 2026-07-13 -- Phase 03.5 execution started
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
-  percent: 70
+  completed_plans: 10
+  percent: 80
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 3.5 — scoring expansion & refinement (H5/H6 backfill done; profiles, seeded refine + variance, TOPSIS in progress)
+**Current focus:** Phase 03.5 — scoring-expansion
 
 ## Current Position
 
-Phase: 3.5 of 5 (Scoring Expansion & Refinement)
-Plan: 02 of 02 (profiles + seeded refine + TOPSIS — being planned)
-Status: ⏳ Sub-plan 01 complete (H5/H6 backfill); sub-plan 02 in progress
-Last activity: 2026-07-13 — Phase 3.5 reopened to encompass full scope; rng.rs spike code in place; GSD discuss → plan cycle running
+Phase: 03.5 (scoring-expansion) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-07-13 -- Phase 03.5 execution started
 
 Progress: [██████████░░░░] ~55%
 
@@ -61,6 +61,7 @@ Wave 2: Plan 03-02 — Interactive overlay (height-weight scoring, hull+sphere t
 | 2. Viewport + Yaw + Export | 3/3 ✅ | — | — |
 | 3. v2 Enhancements | 0/2 | — | — |
 | 4. v3 UX Polish | 0/3 | — | — |
+| Phase 03.5 P02 | 32 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Recent decisions affecting current work:
 - **[Phase 3.5]** PrusaSlicer codegraph comparison (Rotfinder.cpp) surfaced 2 missing heuristics: H5 surface-quality (axis-misalignment, Prusa "Best surface quality") + H6 print-height (Prusa "Lowest Z height"). Both added with TS+Rust parity; both rankers now cover all 5 metrics.
 - **[Phase 3.5]** `rankByConsensus` rewritten: replaced `overhang × (1 + hN×0.5)` fudge with height as its own cost term in the max(); surfaceQuality inverted to cost form. All five heuristics now have equal veto power.
 - **[Phase 3.5]** Research: MCDA literature confirms equal-weight minimax is brittle (dictatorial veto); configurable per-metric weights + TOPSIS are the textbook fixes. Follow-on work: externalise profiles to JSON, add TOPSIS ranker, seed refine determinism + variance metric.
+- [Phase 03.5]: TOPSIS MCDA uses vector normalisation + Euclidean distance to ideal; closeness [0,1]
+- [Phase 03.5]: Weight profiles externalised to JSON via import.meta.glob (build-time, no runtime fetch)
+- [Phase 03.5]: RefineFn callback injection enables pipeline testing without WASM dependency
 
 ### Pending Todos
 
@@ -105,9 +109,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-11T19:00:00.000Z
-Stopped at: Phase 3 execution started
-Resume file: .planning/phases/03-v2-enhancements/03-01-PLAN.md
+Last session: 2026-07-13T08:12:52.340Z
+Stopped at: Completed 03.5-02-PLAN.md
+Resume file: None
 
 ### Infrastructure State
 
