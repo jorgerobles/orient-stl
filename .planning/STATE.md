@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: Phase 3 execution started
-last_updated: "2026-07-11T19:20:00.000Z"
-last_activity: "2026-07-11 — Wave 2 complete: height-weight scoring, hull+sphere toggle, overlay drag-to-rotate, Varita Mágica"
+stopped_at: Phase 3.5 in progress — sub-plan 01 (H5/H6 backfill) complete; sub-plan 02 (profiles, seeded refine, TOPSIS) being planned
+last_updated: "2026-07-13T09:00:00.000Z"
+last_activity: "2026-07-13 — Phase 3.5 reopened to encompass profiles + seeded refine + TOPSIS; rng.rs spike in place; GSD cycle running"
 progress:
-  total_phases: 4
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 65
+  total_phases: 5
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 9
+  percent: 70
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 3 — v2 Enhancements
+**Current focus:** Phase 3.5 — scoring expansion & refinement (H5/H6 backfill done; profiles, seeded refine + variance, TOPSIS in progress)
 
 ## Current Position
 
-Phase: 3 of 4 (v2 Enhancements)
-Plan: 03-02 (complete)
-Status: ✅ Phase 3 complete — 2/2 plans done (pending human verification of Varita Mágica)
-Last activity: 2026-07-11 — Wave 2 complete: height-weight scoring, hull+sphere toggle, overlay drag-to-rotate, Varita Mágica
+Phase: 3.5 of 5 (Scoring Expansion & Refinement)
+Plan: 02 of 02 (profiles + seeded refine + TOPSIS — being planned)
+Status: ⏳ Sub-plan 01 complete (H5/H6 backfill); sub-plan 02 in progress
+Last activity: 2026-07-13 — Phase 3.5 reopened to encompass full scope; rng.rs spike code in place; GSD discuss → plan cycle running
 
 Progress: [██████████░░░░] ~55%
 
@@ -81,6 +81,9 @@ Recent decisions affecting current work:
 - **[Phase 2]** Yaw overlay + score feedback deferred to Phase 3
 - **[Phase 2]** Loading progress bar yields to rendering pipeline via `setTimeout(0)` between sync phases
 - **[Spike resolved]** stl_io compiles cleanly to wasm32-unknown-unknown — no vendored parser needed. WASM-first for computation; WebGPU is the documented upgrade path for future perf-critical phases.
+- **[Phase 3.5]** PrusaSlicer codegraph comparison (Rotfinder.cpp) surfaced 2 missing heuristics: H5 surface-quality (axis-misalignment, Prusa "Best surface quality") + H6 print-height (Prusa "Lowest Z height"). Both added with TS+Rust parity; both rankers now cover all 5 metrics.
+- **[Phase 3.5]** `rankByConsensus` rewritten: replaced `overhang × (1 + hN×0.5)` fudge with height as its own cost term in the max(); surfaceQuality inverted to cost form. All five heuristics now have equal veto power.
+- **[Phase 3.5]** Research: MCDA literature confirms equal-weight minimax is brittle (dictatorial veto); configurable per-metric weights + TOPSIS are the textbook fixes. Follow-on work: externalise profiles to JSON, add TOPSIS ranker, seed refine determinism + variance metric.
 
 ### Pending Todos
 
