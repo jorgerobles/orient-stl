@@ -651,16 +651,8 @@ export interface ScoreWeights {
   wHeight: number;
 }
 
-export const WEIGHT_PRESETS: Record<string, ScoreWeights> = {
-  'overhang-only (v1)': { wOverhang: 1, wFootprint: 0, wCross: 0, wSurface: 0, wHeight: 0 },
-  'footprint-only': { wOverhang: 0, wFootprint: 1, wCross: 0, wSurface: 0, wHeight: 0 },
-  'cross-only (peel)': { wOverhang: 0, wFootprint: 0, wCross: 1, wSurface: 0, wHeight: 0 },
-  'surface-only (finish)': { wOverhang: 0, wFootprint: 0, wCross: 0, wSurface: 1, wHeight: 0 },
-  'height-only (fast)': { wOverhang: 0, wFootprint: 0, wCross: 0, wSurface: 0, wHeight: 1 },
-  'equal': { wOverhang: 1, wFootprint: 1, wCross: 1, wSurface: 1, wHeight: 1 },
-  'resin-biased': { wOverhang: 0.5, wFootprint: 1, wCross: 2, wSurface: 0.5, wHeight: 0.5 },
-  'overhang+footprint': { wOverhang: 1, wFootprint: 1, wCross: 0, wSurface: 0, wHeight: 0 },
-};
+import { loadProfiles } from './profiles';
+export const WEIGHT_PRESETS: Record<string, ScoreWeights> = loadProfiles();
 
 /** Re-rank candidates by a weighted composite (min-max normalised per component).
  *  Minimised metrics (overhang/footprint/cross/height) normalise directly;
@@ -743,6 +735,96 @@ export function rankByConsensus(candidates: Candidate[]): Candidate[] {
     ...c,
     compositeScore: 1 - Math.max(oN[i], fN[i], cN[i], sN[i], qN[i], hN[i]),
   }));
+  ranked.sort((a, b) => b.compositeScore - a.compositeScore);
+  return ranked;
+}
+
+/** TOPSIS MCDA ranker. Vector-normalises 5 metrics, multiplies by weights,
+ *  computes Euclidean distance to ideal-best and ideal-worst, and ranks by
+ *  closeness coefficient C_i = S-/(S+ + S-) ∈ [0,1] (higher = better).
+ *
+ *  Metrics: overhangPenalty (cost), footprint (cost), maxCross (cost),
+ *  surfaceQuality (benefit), estHeight (cost). Columns with weight=0 are
+ *  skipped entirely (contribute nothing to the distance). Pure — returns
+ *  a NEW array, does not mutate input.
+ *
+ *  Per D-06: textbook TOPSIS with vector normalisation. */
+export function rankByTopsis(candidates: Candidate[], weights: ScoreWeights): Candidate[] {
+  if (candidates.length === 0) return [];
+  const n = candidates.length;
+
+  // Extract raw metric arrays.
+  const over = candidates.map(c => c.overhangPenalty);
+  const foot = candidates.map(c => c.footprint);
+  const cross = candidates.map(c => c.maxCross);
+  const surf = candidates.map(c => c.surfaceQuality);
+  const height = candidates.map(c => c.estHeight);
+
+  // Cost metric: lower = better. Benefit metric (surface): higher = better.
+  // For vector normalisation: v_j = x_ij / sqrt(sum(x_kj^2)).
+  function normCol(vals: number[]): number[] {
+    let sq = 0;
+    for (const v of vals) sq += v * v;
+    const denom = Math.sqrt(sq);
+    const d = Math.max(denom, 1e-9);
+    return vals.map(v => v / d);
+  }
+
+  // Normalise each column.
+  const oN = normCol(over);
+  const fN = normCol(foot);
+  const cN = normCol(cross);
+  const sN = normCol(surf);
+  const hN = normCol(height);
+
+  // Apply weights. Skip columns where weight is 0 (all zeros contribution).
+  const wO = weights.wOverhang, wF = weights.wFootprint, wC = weights.wCross;
+  const wS = weights.wSurface, wH = weights.wHeight;
+
+  const wo = oN.map(v => v * wO);
+  const wf = fN.map(v => v * wF);
+  const wc = cN.map(v => v * wC);
+  const ws = sN.map(v => v * wS);
+  const wh = hN.map(v => v * wH);
+
+  // Ideal-best A+: min for cost metrics, max for benefit (surface).
+  let oBest = Infinity, oWorst = -Infinity;
+  let fBest = Infinity, fWorst = -Infinity;
+  let cBest = Infinity, cWorst = -Infinity;
+  let sBest = -Infinity, sWorst = Infinity;
+  let hBest = Infinity, hWorst = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (wo[i] < oBest) oBest = wo[i]; if (wo[i] > oWorst) oWorst = wo[i];
+    if (wf[i] < fBest) fBest = wf[i]; if (wf[i] > fWorst) fWorst = wf[i];
+    if (wc[i] < cBest) cBest = wc[i]; if (wc[i] > cWorst) cWorst = wc[i];
+    if (ws[i] > sBest) sBest = ws[i]; if (ws[i] < sWorst) sWorst = ws[i];
+    if (wh[i] < hBest) hBest = wh[i]; if (wh[i] > hWorst) hWorst = wh[i];
+  }
+
+  // Compute S+ and S- for each candidate.
+  const ranked = candidates.map((c, i) => {
+    let sPlus = 0, sMinus = 0;
+    if (wO > 0) { const d = wo[i] - oBest; sPlus += d * d; const dw = oWorst - wo[i]; sMinus += dw * dw; }
+    if (wF > 0) { const d = wf[i] - fBest; sPlus += d * d; const dw = fWorst - wf[i]; sMinus += dw * dw; }
+    if (wC > 0) { const d = wc[i] - cBest; sPlus += d * d; const dw = cWorst - wc[i]; sMinus += dw * dw; }
+    if (wS > 0) { const d = sBest - ws[i]; sPlus += d * d; const dw = ws[i] - sWorst; sMinus += dw * dw; }
+    if (wH > 0) { const d = wh[i] - hBest; sPlus += d * d; const dw = hWorst - wh[i]; sMinus += dw * dw; }
+
+    sPlus = Math.sqrt(sPlus);
+    sMinus = Math.sqrt(sMinus);
+
+    // Closeness C_i = S- / (S+ + S-). If both are 0 (single candidate or
+    // all-identical metrics on active columns), define C_i = 1.0.
+    let closeness: number;
+    if (sPlus + sMinus < 1e-12) {
+      closeness = 1.0;
+    } else {
+      closeness = sMinus / (sPlus + sMinus);
+    }
+
+    return { ...c, compositeScore: closeness };
+  });
+
   ranked.sort((a, b) => b.compositeScore - a.compositeScore);
   return ranked;
 }
