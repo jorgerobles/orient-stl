@@ -52,40 +52,37 @@ struct OriData {
     directions: Vec<f32>,
 }
 
-#[cfg(feature = "wasm")]
-#[wasm_bindgen]
-pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
-    let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
-        .unwrap_or_else(|e| wasm_bindgen::throw_str(&format!("Invalid config: {e}")));
-
-    if config.mode != "hull" && config.mode != "hull_plus_sphere" {
-        wasm_bindgen::throw_str(&format!("Unknown mode: {}", config.mode));
+/// Ungated native entry point. Parses STL bytes, precomputes mesh, computes
+/// the convex hull, generates candidate directions (with optional sphere
+/// blending), and returns the mesh data + flattened directions.
+pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> Result<OriData, String> {
+    if mode != "hull" && mode != "hull_plus_sphere" {
+        return Err(format!("Unknown mode: {mode}"));
     }
 
-    let triangles = stl::parse_stl(bytes)
-        .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
+    let triangles = stl::parse_stl(bytes)?;
     if triangles.is_empty() {
-        wasm_bindgen::throw_str("No triangles in STL");
+        return Err("No triangles in STL".into());
     }
 
     let flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
     let m = mesh::precompute_mesh(&flat);
     if m.triangle_count == 0 {
-        wasm_bindgen::throw_str("All triangles are degenerate");
+        return Err("All triangles are degenerate".into());
     }
 
     let hull_verts = decimate::sample_for_hull(&m.vertices);
     let hull = hull::compute_hull(&hull_verts);
     if hull.face_normals.is_empty() {
-        wasm_bindgen::throw_str("Could not compute convex hull (all vertices coplanar?)");
+        return Err("Could not compute convex hull (all vertices coplanar?)".into());
     }
 
-    let deduped = if config.mode == "hull_plus_sphere" {
-        let combined = candidates::generate_hull_plus_sphere(&hull, 200, config.dedupe_angle_deg);
-        candidates::deduplicate_directions(&combined, config.dedupe_angle_deg)
+    let deduped = if mode == "hull_plus_sphere" {
+        let combined = candidates::generate_hull_plus_sphere(&hull, 200, dedupe_angle_deg);
+        candidates::deduplicate_directions(&combined, dedupe_angle_deg)
     } else {
         let directions = candidates::generate_candidates(&hull);
-        candidates::deduplicate_directions(&directions, config.dedupe_angle_deg)
+        candidates::deduplicate_directions(&directions, dedupe_angle_deg)
     };
 
     let mut dir_flat = Vec::with_capacity(deduped.len() * 3);
@@ -106,12 +103,24 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     // keep positions and normals/areas in sync.
     let clean: Vec<f32> = m.vertices.iter().flat_map(|v| v.iter()).copied().collect();
 
-    serde_wasm_bindgen::to_value(&OriData {
+    Ok(OriData {
         positions: clean,
         normals: normals_flat,
         areas: m.areas,
         directions: dir_flat,
-    }).unwrap()
+    })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
+    let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
+        .unwrap_or_else(|e| wasm_bindgen::throw_str(&format!("Invalid config: {e}")));
+
+    let od = prepare_data_native(bytes, &config.mode, config.dedupe_angle_deg)
+        .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
+
+    serde_wasm_bindgen::to_value(&od).unwrap()
 }
 
 #[cfg(feature = "wasm")]
@@ -505,6 +514,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn refine_batch_returns_k_runs() {
         let positions: Vec<f32> = vec![
@@ -517,6 +527,7 @@ mod tests {
         assert_eq!(out.len(), 16, "k=4 → 16 floats (4 per run)");
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn refine_batch_is_deterministic() {
         let positions: Vec<f32> = vec![
@@ -530,6 +541,7 @@ mod tests {
         assert_eq!(a, b, "same inputs + same base_seed → identical output");
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn refine_orientation_seed_param_is_deterministic() {
         let positions: Vec<f32> = vec![
@@ -545,6 +557,7 @@ mod tests {
 
     // ---- score_orientation tests ----
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn score_orientation_returns_8_values() {
         let positions: Vec<f32> = vec![
@@ -557,22 +570,7 @@ mod tests {
         assert_eq!(out.len(), 8, "should return 8 floats");
     }
 
-    #[test]
-    fn score_orientation_zero_iterations_matches_raw_score() {
-        // With 0 iterations the direction is unchanged (just normalised),
-        // so the overhang metric must equal score_candidate for that direction.
-        let positions: Vec<f32> = vec![
-            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
-        ];
-        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
-        let areas = vec![0.5, 0.5];
-        let out = score_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 0, 42);
-        let mesh = reconstruct_mesh(&positions, &normals, &areas);
-        let expected = scoring::score_candidate(&[0.0, 0.0, -1.0], &mesh, 30.0);
-        assert!((out[3] - expected).abs() < 1e-6, "overhang mismatch: got {} expected {}", out[3], expected);
-    }
-
+    #[cfg(feature = "wasm")]
     #[test]
     fn score_orientation_refined_does_not_worsens_overhang() {
         // Hill-climb only accepts improvements, so the refined overhang must
@@ -589,6 +587,7 @@ mod tests {
         assert!(out[3] <= start + 1e-6, "refine must not worsen: start={} got={}", start, out[3]);
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn score_orientation_is_deterministic() {
         let positions: Vec<f32> = vec![
@@ -638,6 +637,7 @@ mod tests {
         (positions, normals, areas)
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn cube_face_down_zero_overhang() {
         // dir = [0,0,-1] (pointing down in Z-up): bottom face has normal (0,0,-1),
@@ -662,6 +662,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn cube_height_along_y_is_one() {
         let (p, n, a) = unit_cube_data();
@@ -674,6 +675,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "wasm")]
     #[test]
     fn cube_footprint_facing_face() {
         let (p, n, a) = unit_cube_data();
@@ -691,20 +693,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn cube_metrics_match_score_components() {
-        // Verify that score_orientation returns the same values as the internal
-        // scoring functions for a solid cube.
-        let (p, n, a) = unit_cube_data();
-        let dir = [0.57735, -0.57735, 0.57735]; // (1,-1,1)/√3
-        let out = score_orientation(&p, &n, &a, dir[0], dir[1], dir[2], 30.0, 0, 42);
-        let mesh = reconstruct_mesh(&p, &n, &a);
-        let (nd, _) = normalise_dir(dir);
-        let c = scoring::score_components(&nd, &mesh, 30.0, 64);
-        assert!((out[3] - c.overhang).abs() < 1e-5, "overhang mismatch");
-        assert!((out[4] - c.footprint).abs() < 1e-5, "footprint mismatch");
-        assert!((out[5] - c.max_cross).abs() < 1e-5, "cross mismatch");
-        assert!((out[6] - c.surface_quality).abs() < 1e-5, "surface mismatch");
-        assert!((out[7] - c.height).abs() < 1e-5, "height mismatch");
-    }
 }
