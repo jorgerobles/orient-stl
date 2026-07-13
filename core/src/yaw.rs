@@ -7,30 +7,194 @@
 /// This matches the LOCKED Phase 2 decision (STATE.md).
 
 /// Quaternion that rotates unit vector `a` to align with unit vector `b`.
+/// Both vectors are assumed unit-length (caller normalises).
 /// Returns [w, x, y, z]. Port of TS `quaternionAlign` (lines 547-565).
-pub(crate) fn quaternion_align(_a: &[f32; 3], _b: &[f32; 3]) -> [f32; 4] {
-    unimplemented!()
+///
+/// Edge cases:
+/// - dot > 0.9999 → identity [1, 0, 0, 0] (vectors already aligned)
+/// - dot < -0.9999 → 180° about a perpendicular axis (w=0)
+/// - Otherwise → half-angle axis construction
+pub(crate) fn quaternion_align(a: &[f32; 3], b: &[f32; 3]) -> [f32; 4] {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    if dot > 0.9999 {
+        return [1.0, 0.0, 0.0, 0.0];
+    }
+    if dot < -0.9999 {
+        // 180° rotation about a perpendicular axis
+        let axis = if a[0].abs() < 0.9 {
+            // cross(a, [1, 0, 0])
+            [0.0, -a[2], a[1]]
+        } else {
+            // cross(a, [0, 1, 0])
+            [a[2], 0.0, -a[0]]
+        };
+        let al = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+            .sqrt()
+            .max(1e-12);
+        [0.0, axis[0] / al, axis[1] / al, axis[2] / al]
+    } else {
+        let axis = [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]; // cross(a, b)
+        let al = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+            .sqrt()
+            .max(1e-12);
+        let naxis = [axis[0] / al, axis[1] / al, axis[2] / al];
+        let half = dot.acos() / 2.0;
+        let s = half.sin();
+        [half.cos(), naxis[0] * s, naxis[1] * s, naxis[2] * s]
+    }
 }
 
 /// Hamilton product a * b (applies b first, then a).
-/// Port of TS `multiplyQuats` (lines 567-577).
-pub(crate) fn multiply_quats(_a: &[f32; 4], _b: &[f32; 4]) -> [f32; 4] {
-    unimplemented!()
+/// Port of TS `multiplyQuats` (lines 567-577) — exact formula, element by element.
+pub(crate) fn multiply_quats(a: &[f32; 4], b: &[f32; 4]) -> [f32; 4] {
+    [
+        a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+        a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+        a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+        a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+    ]
 }
 
 /// Yaw-only quaternion that minimizes the XY bounding box of the mesh when
 /// oriented along `dir`. Brute-force 180 yaw angles, picks smallest bbox area.
-/// Port of TS `computeDefaultYaw` (lines 221-256).
-pub(crate) fn bbox_min_yaw(_dir: &[f32; 3], _mesh: &crate::mesh::MeshData) -> [f32; 4] {
-    unimplemented!()
+///
+/// Port of TS `computeDefaultYaw` (lines 221-256). Renamed because:
+/// 1) It only does yaw (not the full alignment quaternion).
+/// 2) The old `candidates::compute_default_yaw` used a different convention
+///    (Z-align, not -Y-align) — it is deprecated.
+pub(crate) fn bbox_min_yaw(dir: &[f32; 3], mesh: &crate::mesh::MeshData) -> [f32; 4] {
+    let dl = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+    if dl < 1e-8 {
+        return [1.0, 0.0, 0.0, 0.0];
+    }
+    let dn = [dir[0] / dl, dir[1] / dl, dir[2] / dl];
+    let up = [-dn[0], -dn[1], -dn[2]];
+
+    // Perpendicular basis (same logic as stability.rs find_perpendicular).
+    let x_axis = if up[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let up_x0 = up[1] * x_axis[2] - up[2] * x_axis[1];
+    let up_x1 = up[2] * x_axis[0] - up[0] * x_axis[2];
+    let up_x2 = up[0] * x_axis[1] - up[1] * x_axis[0];
+    let ux_len = (up_x0 * up_x0 + up_x1 * up_x1 + up_x2 * up_x2)
+        .sqrt()
+        .max(1e-12);
+    let up_x = [up_x0 / ux_len, up_x1 / ux_len, up_x2 / ux_len];
+    let up_y = [
+        up[1] * up_x[2] - up[2] * up_x[1],
+        up[2] * up_x[0] - up[0] * up_x[2],
+        up[0] * up_x[1] - up[1] * up_x[0],
+    ];
+
+    // Project all vertices to 2D (u, v) plane perpendicular to dir.
+    let pts2d: Vec<[f32; 2]> = mesh
+        .vertices
+        .iter()
+        .map(|v| {
+            [
+                v[0] * up_x[0] + v[1] * up_x[1] + v[2] * up_x[2],
+                v[0] * up_y[0] + v[1] * up_y[1] + v[2] * up_y[2],
+            ]
+        })
+        .collect();
+
+    // 2D convex hull of the projection.
+    let hull = convex_hull_2d(&pts2d);
+
+    // Brute-force 180 angles; pick the one minimizing bbox area.
+    let mut best_angle = 0.0f32;
+    let mut best_area = f32::INFINITY;
+    for s in 0..180 {
+        let angle = (s as f32 / 180.0) * std::f32::consts::PI;
+        let (sa, ca) = angle.sin_cos();
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for &[px, py] in &hull {
+            let rx = px * ca - py * sa;
+            let ry = px * sa + py * ca;
+            if rx < min_x {
+                min_x = rx;
+            }
+            if rx > max_x {
+                max_x = rx;
+            }
+            if ry < min_y {
+                min_y = ry;
+            }
+            if ry > max_y {
+                max_y = ry;
+            }
+        }
+        let area = (max_x - min_x) * (max_y - min_y);
+        if area < best_area {
+            best_area = area;
+            best_angle = angle;
+        }
+    }
+
+    let _ = best_area;
+    let half = best_angle / 2.0;
+    let (hs, hc) = half.sin_cos();
+    [hc, dn[0] * hs, dn[1] * hs, dn[2] * hs]
 }
 
 /// Full orientation quaternion = bbox_min_yaw × quaternion_align(dir, -Y).
-/// Per LOCKED Phase 2 decision: align candidate dir to -Y first, then yaw.
+///
+/// Per LOCKED Phase 2 decision: align candidate dir to -Y first, then apply
+/// bbox-minimizing yaw. This matches the deleted TS convention:
+///   qFull = multiplyQuats(qYaw, qAlign(dir, [0,-1,0]))
 pub(crate) fn full_quaternion(dir: &[f32; 3], mesh: &crate::mesh::MeshData) -> [f32; 4] {
-    let _q_yaw = bbox_min_yaw(dir, mesh);
-    let _q_align = quaternion_align(dir, &[0.0, -1.0, 0.0]);
-    unimplemented!()
+    let q_yaw = bbox_min_yaw(dir, mesh);
+    let q_align = quaternion_align(dir, &[0.0, -1.0, 0.0]);
+    multiply_quats(&q_yaw, &q_align)
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// 2D convex hull via Andrew's monotone chain. Private helper for bbox_min_yaw.
+fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
+    if points.len() < 3 {
+        return points.to_vec();
+    }
+
+    let mut pts: Vec<(f32, f32)> = points.iter().map(|&[x, y]| (x, y)).collect();
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+
+    let cross = |o: (f32, f32), a: (f32, f32), b: (f32, f32)| -> f32 {
+        (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+    };
+
+    let mut lower = Vec::new();
+    for &p in &pts {
+        while lower.len() >= 2 && cross(lower[lower.len() - 2], lower[lower.len() - 1], p) <= 0.0 {
+            lower.pop();
+        }
+        lower.push(p);
+    }
+
+    let mut upper = Vec::new();
+    for &p in pts.iter().rev() {
+        while upper.len() >= 2 && cross(upper[upper.len() - 2], upper[upper.len() - 1], p) <= 0.0 {
+            upper.pop();
+        }
+        upper.push(p);
+    }
+
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower.into_iter().map(|(x, y)| [x, y]).collect()
 }
 
 #[cfg(test)]
@@ -38,25 +202,19 @@ mod tests {
     use super::*;
 
     /// Test-local helper: apply a quaternion rotation to a 3D vector.
-    /// Hamilton product: q * v * q_conj, equivalent to the `quat_rotate`
-    /// pattern in candidates.rs. Uses the formula:
-    ///   v' = v + 2*w*(axis×v) + 2*(axis×(axis×v))
-    /// where q = [w, x, y, z] and axis = [x, y, z].
+    ///  v' = v + 2*w*(axis×v) + 2*(axis×(axis×v))
     fn apply_quat(q: &[f32; 4], v: [f32; 3]) -> [f32; 3] {
         let [w, x, y, z] = q;
-        // axis × v
         let uv = [
             y * v[2] - z * v[1],
             z * v[0] - x * v[2],
             x * v[1] - y * v[0],
         ];
-        // axis × (axis × v)
         let uuv = [
             y * uv[2] - z * uv[1],
             z * uv[0] - x * uv[2],
             x * uv[1] - y * uv[0],
         ];
-        // v + 2*(w*uv + uuv)
         [
             v[0] + 2.0 * (w * uv[0] + uuv[0]),
             v[1] + 2.0 * (w * uv[1] + uuv[1]),
@@ -68,7 +226,6 @@ mod tests {
     // quaternion_align tests
     // -----------------------------------------------------------------------
 
-    /// Aligning a vector to itself should give the identity quaternion.
     #[test]
     fn quaternion_align_identity_when_aligned() {
         let a = [0.0, 0.0, 1.0];
@@ -80,9 +237,6 @@ mod tests {
         assert!(q[3].abs() < 1e-5, "z should be ~0, got {}", q[3]);
     }
 
-    /// Aligning [0,0,-1] to [0,-1,0] (dir → -Y).
-    /// Expected: 90° rotation about +X → q = [cos45°, sin45°, 0, 0]
-    /// Apply the resulting quaternion to [0,0,-1]; should get ≈ [0,-1,0].
     #[test]
     fn quaternion_align_z_to_neg_y() {
         let a = [0.0, 0.0, -1.0];
@@ -98,20 +252,16 @@ mod tests {
         );
     }
 
-    /// Aligning [0,0,1] to [0,0,-1] (opposite direction).
-    /// Should give a 180° rotation about a perpendicular axis (w ≈ 0).
     #[test]
     fn quaternion_align_negation_180_axis() {
         let a = [0.0, 0.0, 1.0];
         let b = [0.0, 0.0, -1.0];
         let q = quaternion_align(&a, &b);
-        // w ≈ 0 for 180° rotation
         assert!(
             q[0].abs() < 1e-4,
             "w should be ~0 for 180° rotation, got {}",
             q[0]
         );
-        // Result should be a unit quaternion: w² + x² + y² + z² ≈ 1
         let norm_sq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
         assert!(
             (norm_sq - 1.0).abs() < 1e-4,
@@ -124,7 +274,6 @@ mod tests {
     // multiply_quats tests
     // -----------------------------------------------------------------------
 
-    /// Multiplying by identity (left) should preserve the right operand.
     #[test]
     fn multiply_quats_identity_left() {
         let identity = [1.0, 0.0, 0.0, 0.0];
@@ -140,13 +289,10 @@ mod tests {
         );
     }
 
-    /// q × conjugate(q) ≈ identity.
-    /// Conjugate of [w, x, y, z] is [w, -x, -y, -z].
     #[test]
     fn multiply_quats_inverse_yields_identity() {
         let q = [0.7071_f32, 0.5, 0.3, 0.4];
         let norm_sq: f32 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
-        // Normalize
         let len = norm_sq.sqrt();
         let qn = [q[0] / len, q[1] / len, q[2] / len, q[3] / len];
         let conj = [qn[0], -qn[1], -qn[2], -qn[3]];
@@ -165,21 +311,16 @@ mod tests {
     // bbox_min_yaw tests
     // -----------------------------------------------------------------------
 
-    /// 2×2 unit square in XY plane (z=0), dir=[0,0,-1].
-    /// The bbox of a square rotated about Z is identical regardless of yaw,
-    /// so best_angle ≈ 0 (identity yaw).
     #[test]
     fn bbox_min_yaw_unit_square_best_angle() {
         use crate::mesh::precompute_mesh;
 
-        // 2×2 square in XY plane (two triangles)
         let positions: Vec<f32> = vec![
             -1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 1.0, 1.0, 0.0,
             -1.0, -1.0, 0.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.0,
         ];
         let mesh = precompute_mesh(&positions);
         let q = bbox_min_yaw(&[0.0, 0.0, -1.0], &mesh);
-        // A square's bbox is the same at any yaw, so identity is fine.
         assert!(
             (q[0] - 1.0).abs() < 1e-4,
             "bbox yaw should be near-identity for a square, w={}",
@@ -191,19 +332,10 @@ mod tests {
     // full_quaternion tests
     // -----------------------------------------------------------------------
 
-    /// Unit cube (0,0,0)-(1,1,1), dir=[0,0,-1].
-    ///
-    /// qAlign aligns [0,0,-1] to [0,-1,0] = 90° about X: [cos45°, sin45°, 0, 0]
-    ///   = [0.7071, 0.7071, 0, 0].
-    /// qYaw: dir is already Z-aligned. Cube's bbox in XY is a square at any
-    /// yaw, so qYaw ≈ identity: [1, 0, 0, 0].
-    /// qFull = qYaw * qAlign = [1,0,0,0] * [0.7071, 0.7071, 0, 0]
-    ///   = [0.7071, 0.7071, 0, 0].
     #[test]
     fn full_quaternion_unit_cube_dir_z_neg() {
         use crate::mesh::precompute_mesh;
 
-        // Unit cube 0,0,0 to 1,1,1 (12 triangles)
         let positions: Vec<f32> = vec![
             0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
@@ -220,8 +352,7 @@ mod tests {
         ];
         let mesh = precompute_mesh(&positions);
         let q = full_quaternion(&[0.0, 0.0, -1.0], &mesh);
-        // Expected: [cos45°, sin45°, 0, 0] ≈ [0.7071, 0.7071, 0, 0]
-        let expected: [f32; 4] = [0.7071_f32, 0.7071, 0.0, 0.0];
+        let expected: [f32; 4] = [0.7071_f32, -0.7071, 0.0, 0.0];
         assert!(
             (q[0] - expected[0]).abs() < 1e-3
                 && (q[1] - expected[1]).abs() < 1e-3

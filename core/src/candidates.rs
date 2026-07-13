@@ -63,6 +63,8 @@ pub(crate) fn generate_hull_plus_sphere(
     combined
 }
 
+#[deprecated(note = "Use yaw::full_quaternion or yaw::bbox_min_yaw instead. This fn uses a Z-up convention; the new code uses the LOCKED -Y convention from Phase 2.")]
+#[allow(dead_code)]
 pub(crate) fn compute_default_yaw(
     direction: &[f32; 3],
     hull_vertices: &[[f32; 3]],
