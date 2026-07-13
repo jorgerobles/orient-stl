@@ -12,9 +12,11 @@ mod yaw;
 #[cfg(test)]
 mod harness;
 
+#[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
@@ -50,6 +52,7 @@ struct OriData {
     directions: Vec<f32>,
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
@@ -111,6 +114,7 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     }).unwrap()
 }
 
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn refine_orientation(
     positions: &[f32],
@@ -134,6 +138,7 @@ pub fn refine_orientation(
 /// Returns `k × 4` floats: each run's `[dir_x, dir_y, dir_z, score]`. Used by
 /// the worker to compute the best refined score (min) and the variance (stddev)
 /// across runs — the latter becomes the H7 "refine stability" metric.
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn refine_orientation_batch(
     positions: &[f32],
@@ -174,6 +179,7 @@ pub fn refine_orientation_batch(
 /// the nearest local overhang minimum, and ALL metrics are computed for
 /// that refined direction — ensuring the overhang score and the other 4
 /// metrics describe the same orientation.
+#[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn score_orientation(
     positions: &[f32],
@@ -195,6 +201,183 @@ pub fn score_orientation(
         best_dir[0], best_dir[1], best_dir[2],
         c.overhang, c.footprint, c.max_cross, c.surface_quality, c.height,
     ]
+}
+
+// ---------------------------------------------------------------------------
+// New WASM exports (Plan 02)
+// ---------------------------------------------------------------------------
+
+/// Score ALL directions in one call. Returns N×13 floats per direction:
+/// [qx, qy, qz, qw, overhang, footprint, cross, surface, height, shadowed, stable, margin, contact_area]
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn score_all_directions(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    directions: &[f32],
+    critical_angle_deg: f32,
+    refine_iters: u32,
+    _exclude_unstable: bool,
+    progress: Option<js_sys::Function>,
+) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let hull_verts = decimate::sample_for_hull(&mesh.vertices);
+    let hull = hull::compute_hull(&hull_verts);
+    let total = directions.len() / 3;
+    let mut out = Vec::with_capacity(total * 13);
+
+    for i in 0..total {
+        let dir = [directions[i * 3], directions[i * 3 + 1], directions[i * 3 + 2]];
+        let (dir_n, _) = normalise_dir(dir);
+
+        // Refine (optional), then compute all metrics for the refined direction.
+        let (best_dir, _) = if refine_iters > 0 {
+            let rng = rng::Rng::new(rng::seed_from_direction(&dir_n, 0));
+            refine_once(&mesh, &dir_n, critical_angle_deg, refine_iters.min(500), rng)
+        } else {
+            (dir_n, 0.0)
+        };
+
+        let c = scoring::score_components(&best_dir, &mesh, critical_angle_deg, 64);
+        let shadowed = scoring::shadowed_overhang_fraction(&best_dir, &mesh, critical_angle_deg, 32, 0.02);
+        let stab = stability::check_stability(&best_dir, &mesh, &hull);
+        let q = yaw::full_quaternion(&best_dir, &mesh);
+
+        let stable_f = if stab.stable { 1.0 } else { 0.0 };
+        out.extend_from_slice(&[
+            q[0], q[1], q[2], q[3],              // quaternion [w, x, y, z]
+            c.overhang, c.footprint, c.max_cross, c.surface_quality, c.height,
+            shadowed,
+            stable_f, stab.margin, stab.contact_area,
+        ]);
+
+        if let Some(ref cb) = progress {
+            if i % 10 == 0 {
+                let _ = cb.call2(
+                    &wasm_bindgen::JsValue::UNDEFINED,
+                    &wasm_bindgen::JsValue::from_f64(i as f64),
+                    &wasm_bindgen::JsValue::from_f64(total as f64),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// Rank candidates by method. Input is N×13 flat metrics (output of score_all_directions).
+/// Returns N×2 [index, composite_score] sorted by method's convention.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn rank_candidates(
+    metrics_flat: &[f32],
+    weights: &[f32],
+    method: &str,
+) -> Vec<f32> {
+    let n = metrics_flat.len() / 13;
+    let mut metrics = Vec::with_capacity(n);
+    for i in 0..n {
+        let base = i * 13;
+        // Per-direction layout: [0-3]=quat, [4]=overhang, [5]=footprint, [6]=cross,
+        // [7]=surface, [8]=height, [9]=shadowed, [10]=stable, [11]=margin, [12]=contact
+        metrics.push(ranking::CandidateMetrics {
+            overhang: metrics_flat[base + 4],
+            footprint: metrics_flat[base + 5],
+            max_cross: metrics_flat[base + 6],
+            surface: metrics_flat[base + 7],
+            height: metrics_flat[base + 8],
+            shadowed: metrics_flat[base + 9],
+        });
+    }
+
+    let w = ranking::ScoreWeights {
+        w_overhang: weights[0],
+        w_footprint: weights[1],
+        w_cross: weights[2],
+        w_surface: weights[3],
+        w_height: weights[4],
+    };
+
+    let ranked = match method {
+        "weights" => ranking::rank_by_weights(&metrics, &w),
+        "consensus" => ranking::rank_by_consensus(&metrics),
+        "topsis" => ranking::rank_by_topsis(&metrics, &w),
+        _ => vec![],
+    };
+
+    let mut out = Vec::with_capacity(ranked.len() * 2);
+    for (idx, score) in ranked {
+        out.push(idx as f32);
+        out.push(score);
+    }
+    out
+}
+
+/// Compute normalization bounds (min/max per metric) by sampling ~30 directions.
+/// Returns 10 floats: [lo[5], hi[5]] for overhang, footprint, cross, surface, height.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn compute_norm_bounds(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    directions: &[f32],
+    critical_angle_deg: f32,
+) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let total = directions.len() / 3;
+    let step = (total / 30).max(1);
+
+    let mut lo = [f32::INFINITY; 5];
+    let mut hi = [f32::NEG_INFINITY; 5];
+
+    for i in (0..total).step_by(step) {
+        let dir = [directions[i * 3], directions[i * 3 + 1], directions[i * 3 + 2]];
+        let (nd, _) = normalise_dir(dir);
+        let c = scoring::score_components(&nd, &mesh, critical_angle_deg, 64);
+        let vals = [c.overhang, c.footprint, c.max_cross, c.surface_quality, c.height];
+        for j in 0..5 {
+            if vals[j] < lo[j] { lo[j] = vals[j]; }
+            if vals[j] > hi[j] { hi[j] = vals[j]; }
+        }
+    }
+
+    vec![
+        lo[0], lo[1], lo[2], lo[3], lo[4],
+        hi[0], hi[1], hi[2], hi[3], hi[4],
+    ]
+}
+
+/// Select a diverse subset of candidates by angle-diversity filtering.
+/// `ranked` is N×2 [index, composite_score] — output of rank_candidates.
+/// `directions` is M×3 raw direction vectors.
+/// Returns selected indices as Vec<f32> (WASM FFI constraint — JS casts back).
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn select_diverse(
+    ranked: &[f32],
+    directions: &[f32],
+    stable_flags: &[f32],
+    exclude_unstable: bool,
+    max_candidates: usize,
+    min_angle_deg: f32,
+) -> Vec<f32> {
+    let n = ranked.len() / 2;
+    let mut scored = Vec::with_capacity(n);
+    for i in 0..n {
+        scored.push((ranked[i * 2] as usize, ranked[i * 2 + 1]));
+    }
+
+    let m = directions.len() / 3;
+    let mut dirs = Vec::with_capacity(m);
+    for i in 0..m {
+        dirs.push([directions[i * 3], directions[i * 3 + 1], directions[i * 3 + 2]]);
+    }
+
+    let stable: Vec<bool> = stable_flags.iter().map(|&f| f > 0.5).collect();
+    let result = selection::merge_candidates(&scored, &dirs, &stable, exclude_unstable, max_candidates, min_angle_deg);
+
+    result.into_iter().map(|i| i as f32).collect()
 }
 
 fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::MeshData {
