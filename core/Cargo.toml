@@ -7,12 +7,23 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
-serde-wasm-bindgen = "0.6"
 stl_io = "0.11"
-console_error_panic_hook = "0.1"
-js-sys = "0.3.103"
+
+# WASM-only — feature-gated
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3.103", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# CLI-only — feature-gated
+serde_json = { version = "1", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[features]
+default = ["wasm"]
+wasm = ["wasm-bindgen", "serde-wasm-bindgen", "js-sys", "console_error_panic_hook"]
+cli = ["serde_json", "clap"]
 
 [profile.release]
 opt-level = "s"
