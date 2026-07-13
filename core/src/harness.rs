@@ -6,6 +6,7 @@ use crate::candidates::{deduplicate_directions, generate_candidates};
 use crate::decimate::sample_for_hull;
 use crate::hull::compute_hull;
 use crate::mesh::precompute_mesh;
+use crate::ranking::{CandidateMetrics, ScoreWeights, rank_by_weights};
 use crate::scoring::{footprint_area, max_cross_section, misalignment_score, min_z_height, score_candidate};
 use crate::stl::parse_stl;
 
@@ -75,15 +76,8 @@ fn harness_run() {
             sfs.push(misalignment_score(d, &mesh));
             hts.push(min_z_height(d, &mesh));
         }
-        // Min-max normalise each to [0,1]. Surface quality is a MAXIMISE metric
-        // → invert so all components are in cost form (lower = better).
-        let ov_n = normalise(&overs);
-        let fp_n = normalise(&fps);
-        let cr_n = normalise(&crs);
-        let sf_n = invert_normalise(&sfs);
-        let ht_n = normalise(&hts);
 
-        // Reference: print the best direction's raw components for context.
+        // Raw component ranges (for reference).
         println!("\n  raw component ranges (min..max across candidates):");
         println!("    overhang:  {:.3} .. {:.3}", minOf(&overs), maxOf(&overs));
         println!("    footprint: {:.3} .. {:.3}", minOf(&fps), maxOf(&fps));
@@ -91,20 +85,31 @@ fn harness_run() {
         println!("    surface:   {:.3} .. {:.3}", minOf(&sfs), maxOf(&sfs));
         println!("    height:    {:.3} .. {:.3}", minOf(&hts), maxOf(&hts));
 
+        // Build CandidateMetrics vector (no shadowed — set to 0).
+        let metrics: Vec<CandidateMetrics> = (0..dirs.len())
+            .map(|i| CandidateMetrics {
+                overhang: overs[i],
+                footprint: fps[i],
+                max_cross: crs[i],
+                surface: sfs[i],
+                height: hts[i],
+                shadowed: 0.0,
+            })
+            .collect();
+
         for cfg in &configs {
-            let mut ranked: Vec<(usize, f32)> = dirs
-                .iter()
-                .enumerate()
-                .map(|(i, _)| {
-                    let s = cfg.w_overhang * ov_n[i]
-                        + cfg.w_footprint * fp_n[i]
-                        + cfg.w_cross * cr_n[i]
-                        + cfg.w_surface * sf_n[i]
-                        + cfg.w_height * ht_n[i];
-                    (i, s)
-                })
-                .collect();
-            ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            let w = ScoreWeights {
+                w_overhang: cfg.w_overhang,
+                w_footprint: cfg.w_footprint,
+                w_cross: cfg.w_cross,
+                w_surface: cfg.w_surface,
+                w_height: cfg.w_height,
+            };
+            let ranked = rank_by_weights(&metrics, &w);
+            if ranked.is_empty() {
+                println!("\n  [{}] (no candidates)", cfg.name);
+                continue;
+            }
             let top = &ranked[0];
             let d = &dirs[top.0];
             println!(
@@ -127,18 +132,5 @@ fn harness_run() {
     }
 }
 
-fn normalise(v: &[f32]) -> Vec<f32> {
-    let lo = minOf(v);
-    let hi = maxOf(v);
-    let span = (hi - lo).max(1e-9);
-    v.iter().map(|x| (x - lo) / span).collect()
-}
-fn invert_normalise(v: &[f32]) -> Vec<f32> {
-    // Maximise metric → cost form: best (highest) maps to 0, worst (lowest) to 1.
-    let lo = minOf(v);
-    let hi = maxOf(v);
-    let span = (hi - lo).max(1e-9);
-    v.iter().map(|x| (hi - x) / span).collect()
-}
 fn minOf(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::INFINITY, f32::min) }
 fn maxOf(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::NEG_INFINITY, f32::max) }
