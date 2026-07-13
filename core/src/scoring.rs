@@ -125,13 +125,77 @@ pub(crate) fn max_cross_section(direction: &[f32; 3], mesh: &MeshData, bins: usi
     }
 }
 
-/// Composite score — weighted sum of H1/H4/H2. Each component is min-max
-/// normalised against the candidate set externally; here we return the raw
-/// component tuple so the harness can normalise and combine.
+/// H5 — surface-quality (axis-misalignment) score. Port of PrusaSlicer's
+/// `get_misalginment_score` (Rotfinder.cpp:88). For each face, sums the L1
+/// norm of the normal in the orientation frame (dn, e1, e2):
+///   area × (|n·dn| + |n·e1| + |n·e2|)
+/// HIGHER = better. The L1 norm is minimised (=1) when a face aligns with a
+/// single frame axis (big flat shelf/wall — prints poorly) and maximised (=√3)
+/// when the face is diagonal to all three. PrusaSlicer maximises this.
+/// Cost: O(N), three dot products + abs + mul per triangle.
+pub(crate) fn misalignment_score(direction: &[f32; 3], mesh: &MeshData) -> f32 {
+    let dl = (direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]).sqrt();
+    if dl < 1e-12 {
+        return 0.0;
+    }
+    let dn = [direction[0] / dl, direction[1] / dl, direction[2] / dl];
+    let (e1, e2) = perpendicular_basis(&dn);
+    let mut total = 0.0f32;
+    for i in 0..mesh.triangle_count {
+        let n = &mesh.normals[i];
+        let align = (n[0] * dn[0] + n[1] * dn[1] + n[2] * dn[2]).abs()
+            + (n[0] * e1[0] + n[1] * e1[1] + n[2] * e1[2]).abs()
+            + (n[0] * e2[0] + n[1] * e2[1] + n[2] * e2[2]).abs();
+        total += mesh.areas[i] * align;
+    }
+    if total.is_finite() {
+        total
+    } else {
+        0.0
+    }
+}
+
+/// H6 — print height (extent along `direction`). Mirrors PrusaSlicer's
+/// `find_min_z_height_rotation` (Rotfinder.cpp:445) which minimises the rotated
+/// bounding-box Z size. LOWER = better (faster print, fewer layers).
+/// Cost: O(N), one dot product per vertex.
+pub(crate) fn min_z_height(direction: &[f32; 3], mesh: &MeshData) -> f32 {
+    if mesh.vertices.is_empty() {
+        return 0.0;
+    }
+    let dl = (direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]).sqrt();
+    if dl < 1e-12 {
+        return 0.0;
+    }
+    let dn = [direction[0] / dl, direction[1] / dl, direction[2] / dl];
+    let mut lo = f32::INFINITY;
+    let mut hi = f32::NEG_INFINITY;
+    for v in &mesh.vertices {
+        let d = v[0] * dn[0] + v[1] * dn[1] + v[2] * dn[2];
+        if d < lo {
+            lo = d;
+        }
+        if d > hi {
+            hi = d;
+        }
+    }
+    let h = (hi - lo).abs();
+    if h.is_finite() {
+        h
+    } else {
+        0.0
+    }
+}
+
+/// Composite score — raw component tuple for the harness to normalise and
+/// combine. Covers H1 (overhang), H4 (footprint), H2 (max cross-section),
+/// H5 (surface quality — maximise), and H6 (print height — minimise).
 pub(crate) struct ScoreComponents {
     pub overhang: f32,
     pub footprint: f32,
     pub max_cross: f32,
+    pub surface_quality: f32,
+    pub height: f32,
 }
 
 pub(crate) fn score_components(
@@ -144,6 +208,8 @@ pub(crate) fn score_components(
         overhang: score_candidate(direction, mesh, critical_angle_deg),
         footprint: footprint_area(direction, mesh),
         max_cross: max_cross_section(direction, mesh, cross_bins),
+        surface_quality: misalignment_score(direction, mesh),
+        height: min_z_height(direction, mesh),
     }
 }
 
@@ -427,6 +493,68 @@ mod tests {
     fn cross_section_empty_mesh_returns_zero() {
         let mesh = precompute_mesh(&[]);
         assert_eq!(max_cross_section(&[0.0, 0.0, 1.0], &mesh, 8), 0.0);
+    }
+
+    // ---- H5 misalignment_score tests ----
+
+    #[test]
+    fn misalignment_face_on_is_area_only() {
+        // Unit square XY, dir=+Z: |n·dn|=1, |n·e1|=|n·e2|=0 → L1=1 per face.
+        // Score = 0.5*1 + 0.5*1 = 1.0 (lower bound for this mesh).
+        let mesh = unit_square_xy();
+        let s = misalignment_score(&[0.0, 0.0, 1.0], &mesh);
+        assert!((s - 1.0).abs() < 1e-5, "face-on misalignment = total area = 1.0, got {}", s);
+    }
+
+    #[test]
+    fn misalignment_diagonal_dir_is_higher() {
+        // Same face, dir=(1,1,1): |n·dn|=1/√3, |n·e1|+|n·e2|>0 → L1>1 → higher score.
+        let mesh = unit_square_xy();
+        let aligned = misalignment_score(&[0.0, 0.0, 1.0], &mesh);
+        let diagonal = misalignment_score(&[1.0, 1.0, 1.0], &mesh);
+        assert!(diagonal > aligned, "diagonal dir should score higher, got {} vs {}", diagonal, aligned);
+    }
+
+    #[test]
+    fn misalignment_zero_direction_returns_zero() {
+        let mesh = unit_square_xy();
+        assert_eq!(misalignment_score(&[0.0, 0.0, 0.0], &mesh), 0.0);
+    }
+
+    #[test]
+    fn misalignment_empty_mesh_returns_zero() {
+        let mesh = precompute_mesh(&[]);
+        assert_eq!(misalignment_score(&[0.0, 0.0, 1.0], &mesh), 0.0);
+    }
+
+    // ---- H6 min_z_height tests ----
+
+    #[test]
+    fn height_flat_slab_is_zero() {
+        // Unit square at z=0, dir=+Z → extent along Z = 0.
+        let mesh = unit_square_xy();
+        let h = min_z_height(&[0.0, 0.0, 1.0], &mesh);
+        assert!(h < 1e-5, "flat slab height should be ~0, got {}", h);
+    }
+
+    #[test]
+    fn height_two_layer_box_is_layer_gap() {
+        // Two squares at z=0 and z=1 → extent along Z = 1.
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+            0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
+        ];
+        let mesh = precompute_mesh(&positions);
+        let h = min_z_height(&[0.0, 0.0, 1.0], &mesh);
+        assert!((h - 1.0).abs() < 1e-5, "two-layer height should be 1.0, got {}", h);
+    }
+
+    #[test]
+    fn height_empty_mesh_returns_zero() {
+        let mesh = precompute_mesh(&[]);
+        assert_eq!(min_z_height(&[0.0, 0.0, 1.0], &mesh), 0.0);
     }
 
     // ---- H11 shadowed_overhang_fraction tests ----

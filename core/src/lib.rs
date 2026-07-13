@@ -5,6 +5,7 @@ mod candidates;
 mod scoring;
 mod stability;
 mod decimate;
+mod rng;
 #[cfg(test)]
 mod harness;
 
@@ -117,31 +118,86 @@ pub fn refine_orientation(
     dir_z: f32,
     critical_angle_deg: f32,
     iterations: u32,
+    seed: u32,
 ) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let (dir, _) = normalise_dir([dir_x, dir_y, dir_z]);
+    let rng = rng::Rng::new(seed);
+    let (best_dir, best_score) = refine_once(&mesh, &dir, critical_angle_deg, iterations.min(500), rng);
+    vec![best_dir[0], best_dir[1], best_dir[2], best_score]
+}
+
+/// Run `k` independent seeded refinements from the same starting direction.
+/// Returns `k × 4` floats: each run's `[dir_x, dir_y, dir_z, score]`. Used by
+/// the worker to compute the best refined score (min) and the variance (stddev)
+/// across runs — the latter becomes the H7 "refine stability" metric.
+#[wasm_bindgen]
+pub fn refine_orientation_batch(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    dir_x: f32,
+    dir_y: f32,
+    dir_z: f32,
+    critical_angle_deg: f32,
+    iterations: u32,
+    k: u32,
+    base_seed: u32,
+) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let (dir, _) = normalise_dir([dir_x, dir_y, dir_z]);
+    let cap = k.min(8) as usize;
+    let mut out = Vec::with_capacity(cap * 4);
+    for i in 0..cap {
+        let seed = rng::seed_from_direction(&dir, base_seed.wrapping_add(i as u32));
+        let rng = rng::Rng::new(seed);
+        let (rd, rs) = refine_once(&mesh, &dir, critical_angle_deg, iterations.min(500), rng);
+        out.push(rd[0]);
+        out.push(rd[1]);
+        out.push(rd[2]);
+        out.push(rs);
+    }
+    out
+}
+
+fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::MeshData {
     let tri_count = normals.len() / 3;
     let normals_vec: Vec<[f32; 3]> = normals.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
     let areas_vec: Vec<f32> = areas.to_vec();
     let vertices_vec: Vec<[f32; 3]> = positions.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
-    let mesh = mesh::MeshData {
+    mesh::MeshData {
         normals: normals_vec,
         areas: areas_vec,
         vertices: vertices_vec,
         triangle_count: tri_count,
-    };
-
-    let mut best_dir = [dir_x, dir_y, dir_z];
-    let len = (best_dir[0] * best_dir[0] + best_dir[1] * best_dir[1] + best_dir[2] * best_dir[2]).sqrt();
-    if len > 0.0 {
-        best_dir = [best_dir[0] / len, best_dir[1] / len, best_dir[2] / len];
-    } else {
-        best_dir = [0.0, 0.0, -1.0];
     }
-    let mut best_score = scoring::score_candidate(&best_dir, &mesh, critical_angle_deg);
+}
+
+fn normalise_dir(d: [f32; 3]) -> ([f32; 3], f32) {
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if len > 0.0 {
+        ([d[0] / len, d[1] / len, d[2] / len], len)
+    } else {
+        ([0.0, 0.0, -1.0], 0.0)
+    }
+}
+
+/// Single hill-climb run. Deterministic given the same `rng` state. Returns
+/// the refined direction and its overhang score (lower = better).
+fn refine_once(
+    mesh: &mesh::MeshData,
+    start_dir: &[f32; 3],
+    critical_angle_deg: f32,
+    iterations: u32,
+    mut rng: rng::Rng,
+) -> ([f32; 3], f32) {
+    let mut best_dir = *start_dir;
+    let mut best_score = scoring::score_candidate(&best_dir, mesh, critical_angle_deg);
     let mut perturbation_deg = 10.0_f32;
 
-    for i in 0..iterations.min(500) {
-        let u1 = js_sys::Math::random() as f32 * 2.0 - 1.0;
-        let u2 = js_sys::Math::random() as f32 * 2.0 - 1.0;
+    for i in 0..iterations {
+        let u1 = rng.next_signed_f32();
+        let u2 = rng.next_signed_f32();
 
         let perp = [
             best_dir[1] * u2 - best_dir[2] * u1,
@@ -151,7 +207,7 @@ pub fn refine_orientation(
         let plen = (perp[0] * perp[0] + perp[1] * perp[1] + perp[2] * perp[2]).sqrt().max(1e-12);
         let perp = [perp[0] / plen, perp[1] / plen, perp[2] / plen];
 
-        let angle = perturbation_deg * (std::f32::consts::PI / 180.0) * (js_sys::Math::random() as f32 * 2.0 - 1.0);
+        let angle = perturbation_deg * (std::f32::consts::PI / 180.0) * rng.next_signed_f32();
         let (s, c) = angle.sin_cos();
 
         let new_dir = [
@@ -162,7 +218,7 @@ pub fn refine_orientation(
         let nlen = (new_dir[0] * new_dir[0] + new_dir[1] * new_dir[1] + new_dir[2] * new_dir[2]).sqrt().max(1e-12);
         let new_dir = [new_dir[0] / nlen, new_dir[1] / nlen, new_dir[2] / nlen];
 
-        let new_score = scoring::score_candidate(&new_dir, &mesh, critical_angle_deg);
+        let new_score = scoring::score_candidate(&new_dir, mesh, critical_angle_deg);
         if new_score < best_score {
             best_dir = new_dir;
             best_score = new_score;
@@ -174,5 +230,96 @@ pub fn refine_orientation(
         }
     }
 
-    vec![best_dir[0], best_dir[1], best_dir[2], best_score]
+    (best_dir, best_score)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flat_square_mesh() -> mesh::MeshData {
+        // Two triangles in the XY plane (z=0), normal +Z, area 0.5 each.
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        reconstruct_mesh(&positions, &[0.0, 0.0, 1.0, 0.0, 0.0, 1.0], &[0.5, 0.5])
+    }
+
+    #[test]
+    fn refine_once_is_deterministic_for_same_seed() {
+        let mesh = flat_square_mesh();
+        let dir = [0.0, 0.0, -1.0];
+        let (d1, s1) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(42));
+        let (d2, s2) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(42));
+        assert_eq!(d1, d2, "same seed must yield identical direction");
+        assert_eq!(s1.to_bits(), s2.to_bits(), "same seed must yield identical score");
+    }
+
+    #[test]
+    fn refine_once_different_seeds_may_differ() {
+        let mesh = flat_square_mesh();
+        // dir=[0,0,1] faces the same way as the +Z normals → all faces are
+        // overhang (starting score > 0), so different seeds explore different
+        // perturbation trajectories and produce different refined directions.
+        // (dir=[0,0,-1] is already optimal → overhang=0 → all seeds identical.)
+        let dir = [0.0, 0.0, 1.0];
+        let (d1, _) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(1));
+        let (d2, _) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(2));
+        // Different seeds should usually produce different trajectories.
+        assert_ne!(d1, d2, "different seeds should produce different results");
+    }
+
+    #[test]
+    fn refine_once_never_worsens_score() {
+        // The hill-climb only accepts improvements; the returned score must be
+        // <= the score of the starting direction.
+        let mesh = flat_square_mesh();
+        let dir = [0.0, 0.0, -1.0]; // normal -Z: faces point away → overhang should be 0 already
+        let start_score = scoring::score_candidate(&dir, &mesh, 30.0);
+        let (_, refined_score) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(7));
+        assert!(
+            refined_score <= start_score + 1e-6,
+            "refine must not worsen: start={} refined={}",
+            start_score, refined_score
+        );
+    }
+
+    #[test]
+    fn refine_batch_returns_k_runs() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let out = refine_orientation_batch(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 4, 0);
+        assert_eq!(out.len(), 16, "k=4 → 16 floats (4 per run)");
+    }
+
+    #[test]
+    fn refine_batch_is_deterministic() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let a = refine_orientation_batch(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 4, 0);
+        let b = refine_orientation_batch(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 4, 0);
+        assert_eq!(a, b, "same inputs + same base_seed → identical output");
+    }
+
+    #[test]
+    fn refine_orientation_seed_param_is_deterministic() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let a = refine_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
+        let b = refine_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
+        assert_eq!(a, b, "same seed → identical result");
+    }
 }
