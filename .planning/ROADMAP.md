@@ -10,6 +10,7 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 - [x] **Phase 2: Viewport + Yaw + Export (Complete UX Loop)** — three.js viewport with candidate navigation, yaw adjustment, single-file STL export
 - [x] **Phase 3: v2 Enhancements** — Height-weighted scoring, hull+sphere mode, hill-climbing refinement, multi-metric sorting, overhang heatmap (some items partially landed in Phase 1/2 drift)
 - [x] **Phase 3.5: Scoring Expansion & Refinement** — PrusaSlicer comparison surfaced 3 missing capabilities; all delivered (H5/H6 heuristics + profiles + seeded refine + TOPSIS + UI switcher)
+- [ ] **Phase 5: Consolidate All Calculations in Rust** — Move all metrics, rankings, selection, and yaw from TS to Rust. Single WASM call replaces worker-based computeSlice. Rust CLI binary for independent verification. TS becomes rendering-only. Ground-truth tests replace self-referential tests.
 - [ ] **Phase 4: v3 UX Polish** — Thumbnail strip, favorites persistence (IndexedDB), multi-STL ZIP export
 
 ## Phase Details
@@ -128,9 +129,28 @@ Plans:
 - [x] 03.5-01-PLAN.md — H5 + H6 heuristics, ScoreComponents/Candidate extension, ranker rewrites, Rust parity, WASM rebuild
 - [x] 03.5-02-PLAN.md — Verify Rust spike (rng.rs + batch refine) + WASM rebuild; JSON profiles + loader + TOPSIS ranker (TDD); computeSlice batch refine + variance metric + UI dropdowns; final verification
 
+### Phase 5: Consolidate All Calculations in Rust
+
+**Goal**: One source of truth for all calculations. Rust computes every metric, every ranking, every selection, every yaw. TS is rendering-only. A Rust CLI binary verifies correctness independently of the browser.
+**Mode**: TDD (Red-Green-Refactor)
+**Depends on**: Phase 3.5
+**Requirements**: (none — architecture consolidation driven by correctness concerns)
+**Success Criteria** (what must be TRUE):
+
+  1. Every scoring metric (overhang, footprint, cross-section, surface quality, height, shadowed overhang) has exactly ONE implementation — in Rust. No TS duplicate exists.
+  2. Every ranking algorithm (weighted sum, consensus, TOPSIS) has exactly ONE implementation — in Rust. No TS duplicate exists.
+  3. Candidate selection (angle-diversity merge) and yaw optimization (bbox-minimizing) run in Rust.
+  4. A single WASM `score_all_directions` function replaces the worker-based `computeSlice` pipeline. Workers are eliminated or reduced to thin WASM dispatchers.
+  5. A Rust CLI binary (`cargo run --bin cli -- file.stl`) runs the full pipeline (parse → hull → candidates → score → rank) and outputs JSON. Can verify correctness without a browser.
+  6. All metric tests are ground-truth (hand-computed expected values from geometry/math), NOT self-referential (consistency-only tests that compare an implementation to itself).
+  7. All TS metric/ranking test files are deleted. Only rendering-layer tests (quaternion, rotation, convention, centering) remain in TS.
+  8. Browser UI produces identical results to CLI for the same STL + config.
+
+Plans: (to be created by gsd-plan-phase)
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 4
+**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -138,6 +158,7 @@ Plans:
 | 2. Viewport + Yaw + Export (Complete UX Loop) | 3/3 | ✅ Complete | 2026-07-11 |
 | 3. v2 Enhancements | 2/2 | ✅ Complete | - |
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
+| 5. Consolidate All Calculations in Rust | 0/? | Planning | - |
 | 4. v3 UX Polish | 0/3 | Not started | - |
 
 **Phase 2 detail (final):**
