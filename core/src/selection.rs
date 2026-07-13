@@ -15,19 +15,50 @@
 /// Returns indices into the original direction/metric arrays that pass the
 /// diversity filter, capped at `max_candidates`.
 pub(crate) fn merge_candidates(
-    _scored: &[(usize, f32)],
-    _directions: &[[f32; 3]],
-    _stable_flags: &[bool],
-    _exclude_unstable: bool,
-    _max_candidates: usize,
-    _min_angle_deg: f32,
+    scored: &[(usize, f32)],
+    directions: &[[f32; 3]],
+    stable_flags: &[bool],
+    exclude_unstable: bool,
+    max_candidates: usize,
+    min_angle_deg: f32,
 ) -> Vec<usize> {
-    unimplemented!()
+    if scored.is_empty() || directions.is_empty() || max_candidates == 0 {
+        return vec![];
+    }
+    let cos_threshold = (min_angle_deg * std::f32::consts::PI / 180.0).cos();
+    let mut picked_dirs: Vec<[f32; 3]> = Vec::new();
+    let mut result: Vec<usize> = Vec::new();
+
+    for &(idx, _score) in scored {
+        if result.len() >= max_candidates {
+            break;
+        }
+        if exclude_unstable && !stable_flags[idx] {
+            continue;
+        }
+        let dir = directions[idx];
+        let too_close = picked_dirs.iter().any(|p| {
+            let dot = dir[0] * p[0] + dir[1] * p[1] + dir[2] * p[2];
+            dot >= cos_threshold
+        });
+        if !too_close {
+            result.push(idx);
+            picked_dirs.push(dir);
+        }
+    }
+    result
 }
 
 /// Angle (in degrees) between two 3D vectors.
-pub(crate) fn angle_between(_a: &[f32; 3], _b: &[f32; 3]) -> f32 {
-    unimplemented!()
+pub(crate) fn angle_between(a: &[f32; 3], b: &[f32; 3]) -> f32 {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let len_a_sq = a[0] * a[0] + a[1] * a[1] + a[2] * a[2];
+    let len_b_sq = b[0] * b[0] + b[1] * b[1] + b[2] * b[2];
+    if len_a_sq < 1e-12 || len_b_sq < 1e-12 {
+        return 0.0;
+    }
+    let cos_angle = (dot / (len_a_sq * len_b_sq).sqrt()).clamp(-1.0, 1.0);
+    cos_angle.acos() * 180.0 / std::f32::consts::PI
 }
 
 #[cfg(test)]
