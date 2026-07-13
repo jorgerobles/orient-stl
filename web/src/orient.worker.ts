@@ -1,5 +1,4 @@
-import { computeSlice } from './compute';
-import type { OriData, ComputeConfig, RefineFn } from './compute';
+import type { OriData, ComputeConfig, Candidate } from './compute';
 
 let wasmReady: Promise<any> | null = null;
 
@@ -17,21 +16,50 @@ async function ensureWasm() {
 }
 
 self.onmessage = async (e: MessageEvent) => {
-  const { data, config, dirStart, dirCount } = e.data as {
-    data: OriData; config: ComputeConfig; dirStart: number; dirCount: number;
+  const { data, config, weights, ranker, maxCandidates, minAngleDeg } = e.data as {
+    data: OriData; config: ComputeConfig;
+    weights: [number, number, number, number, number];
+    ranker: string; maxCandidates: number; minAngleDeg: number;
   };
+
   const wasm = await ensureWasm();
-  let refineFn: RefineFn | undefined;
-  if (wasm && wasm.refine_orientation_batch) {
-    refineFn = (dir, positions, normals, areas, criticalAngleDeg) =>
-      wasm.refine_orientation_batch(
-        positions, normals, areas,
-        dir[0], dir[1], dir[2],
-        criticalAngleDeg, config.refineIterations ?? 0, 4, 0,
-      ) as number[];
+  if (!wasm) { self.postMessage({ type: 'error', message: 'WASM not loaded' }); return; }
+
+  const progressFn = (i: number, t: number) =>
+    self.postMessage({ type: 'progress', value: Math.round(i / t * 100) });
+
+  const metrics = wasm.score_all_directions(
+    data.positions, data.normals, data.areas, data.directions,
+    config.criticalAngleDeg, config.refineIterations ?? 0, config.excludeUnstable, progressFn,
+  ) as Float32Array;
+
+  const dirCount = data.directions.length / 3;
+  const stableFlags = new Float32Array(dirCount);
+  for (let i = 0; i < dirCount; i++) stableFlags[i] = metrics[i * 13 + 10];
+
+  const ranked = wasm.rank_candidates(metrics, new Float32Array(weights), ranker) as Float32Array;
+  const selected = wasm.select_diverse(
+    ranked, data.directions, stableFlags,
+    config.excludeUnstable, maxCandidates ?? config.maxCandidates, minAngleDeg ?? 15,
+  ) as Float32Array;
+
+  const scoreMap = new Map<number, number>();
+  for (let i = 0; i < ranked.length; i += 2) scoreMap.set(ranked[i], ranked[i + 1]);
+
+  const candidates: Candidate[] = [];
+  for (let si = 0; si < selected.length; si++) {
+    const idx = selected[si], base = idx * 13;
+    candidates.push({
+      id: `candidate-${idx}`,
+      quaternion: [metrics[base], metrics[base + 1], metrics[base + 2], metrics[base + 3]],
+      overhangPenalty: metrics[base + 4], footprint: metrics[base + 5], maxCross: metrics[base + 6],
+      shadowed: metrics[base + 9], surfaceQuality: metrics[base + 7], estHeight: metrics[base + 8],
+      refinedOverhang: metrics[base + 4], refineVariance: 0,
+      stability: metrics[base + 10] > 0.5 ? 'stable' : 'unstable',
+      stabilityMargin: metrics[base + 11], contactArea: metrics[base + 12],
+      compositeScore: scoreMap.get(idx) ?? 0,
+    });
   }
-  const results = computeSlice(data, config, dirStart, dirCount, (pct: number) => {
-    self.postMessage({ type: 'progress', value: pct });
-  }, refineFn);
-  self.postMessage({ type: 'slice-done', results, dirStart, dirCount });
+
+  self.postMessage({ type: 'results', candidates });
 };
