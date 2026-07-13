@@ -6,6 +6,9 @@ mod scoring;
 mod stability;
 mod decimate;
 mod rng;
+mod ranking;
+mod selection;
+mod yaw;
 #[cfg(test)]
 mod harness;
 
