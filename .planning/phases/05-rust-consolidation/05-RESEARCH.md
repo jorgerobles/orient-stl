@@ -804,27 +804,19 @@ pub fn score_all_directions(
 | A6 | `score_orientation` (existing WASM export, used by overlay live-score in main.ts) can be kept alongside new `score_all_directions` | Architecture Patterns | The overlay live-score uses `score_orientation` for per-direction refine+metrics. Keeping it avoids breaking the overlay. It already works and is ground-truth-tested. Low risk. |
 | A7 | The `minShadowedOverhang` (8-sample yaw rotation for shadow minimization) should be folded into `score_all_directions` rather than being a separate TS call | Architecture Patterns | The TS `computeSlice` calls `minShadowedOverhang` per direction. In Rust, this becomes part of the per-direction scoring loop inside `score_all_directions`. The function `shadowed_overhang_fraction` already exists in Rust `scoring.rs`. Just call it 8 times with rotated basis. Low risk. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `decimateForScore` move to Rust?**
-   - What we know: It's a per-triangle sampling function (lines 274-308 of compute.ts). It stays in TS per the locked decision's discretion. The WASM `score_all_directions` receives already-decimated `positions/normals/areas` arrays.
-   - What's unclear: Whether the CLI binary needs to decimate too (it would use full mesh, which is fine for correctness verification but slower).
-   - Recommendation: Keep `decimateForScore` in TS for the browser path. The CLI uses the full mesh (no decimation needed — correctness > speed for verification). If the planner wants symmetry, add a `decimate_for_score` Rust function (simple stride sampling, ~30 lines).
+   - RESOLVED: Keep `decimateForScore` in TS for the browser path. The CLI uses the full mesh (no decimation needed — correctness > speed for verification). Plan 03 T1 retains it in the stripped compute.ts.
 
 2. **Should `directions` be computed in Rust for the CLI, or passed in?**
-   - What we know: In the browser, `prepare_data` computes directions from hull normals and returns them to TS. The CLI needs to compute directions itself (no `prepare_data` WASM call). The core functions `generate_candidates` + `deduplicate_directions` already exist in `candidates.rs` and are not feature-gated.
-   - What's unclear: Whether to expose a `pub fn generate_directions(bytes, config) -> Vec<[f32;3]>` in the pipeline module, or replicate the `prepare_data` logic in the CLI binary.
-   - Recommendation: Add a `pub fn generate_directions(bytes: &[u8], mode: &str, dedupe_angle: f32) -> (MeshData, Vec<[f32;3]>)` to a new `pipeline` module (feature-gated `cli`). The CLI calls it; the WASM path calls the same underlying functions via `prepare_data`.
+   - RESOLVED: Add a `pub fn prepare_data_native(bytes, mode, dedupe_angle) -> (MeshData, Vec<[f32;3]>)` function (feature-gated `cli`). The CLI calls it; the WASM path calls the same underlying functions via `prepare_data`. Plan 02 T2 implements this.
 
 3. **How many ground-truth tests are needed for the new modules?**
-   - What we know: At minimum: 1 weighted-sum test (3 candidates, hand-computed), 1 consensus test (3 candidates), 1 TOPSIS test (3 candidates), 1 selection test (5 directions, 15° diversity), 1 yaw test (2×1 rectangle → optimal yaw=0°), 1 quaternion_align test (dir=[0,0,-1] to [0,-1,0] → identity), 1 multiply_quats test (identity × q = q).
-   - What's unclear: Whether to also add integration tests that verify the full CLI pipeline against a test STL (e.g., `test-tetrahedron.stl` which exists in the repo).
-   - Recommendation: Write unit tests for each new function (ground-truth, tiny meshes). Add ONE CLI integration test that runs the pipeline on `test-tetrahedron.stl` and verifies the JSON output structure (not exact values — those depend on hull normals which are geometry-dependent).
+   - RESOLVED: Write unit tests for each new function (ground-truth, tiny meshes). Plan 01 T2 implements 17+ ground-truth tests covering all ranking/selection/yaw functions. No self-referential tests.
 
 4. **Should the existing `harness.rs` test harness be updated?**
-   - What we know: `harness.rs` (line 1-144) is an `#[ignore]` integration test that runs the full pipeline on fixture STLs and prints ranked results. It currently uses the 5-metric weighted-sum scoring in Rust (lines 94-108).
-   - What's unclear: Whether to update it to use the new `rank_by_weights`/`rank_by_topsis` functions or leave it as-is.
-   - Recommendation: Update harness.rs to use the new ranking module — it becomes a CLI-adjacent integration test that validates the full pipeline on real STLs.
+   - RESOLVED: Update harness.rs to use the new ranking module — it becomes a CLI-adjacent integration test that validates the full pipeline on real STLs. Plan 02 T2 handles this.
 
 ## Environment Availability
 
