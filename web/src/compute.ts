@@ -682,13 +682,13 @@ export function mergeCandidates(
           weights!.wOverhang * ((a.refinedOverhang - oL) / oS) +
           weights!.wFootprint   * ((a.footprint - fL) / fS) +
           weights!.wCross       * ((a.maxCross - cL) / cS) +
-          weights!.wSurface     * ((a.surface - sL) / sS) +
+          weights!.wSurface     * ((sH - a.surface) / sS) +
           weights!.wHeight      * ((a.height - hL) / hS);
         const bScore =
           weights!.wOverhang * ((b.refinedOverhang - oL) / oS) +
           weights!.wFootprint   * ((b.footprint - fL) / fS) +
           weights!.wCross       * ((b.maxCross - cL) / cS) +
-          weights!.wSurface     * ((b.surface - sL) / sS) +
+          weights!.wSurface     * ((sH - b.surface) / sS) +
           weights!.wHeight      * ((b.height - hL) / hS);
         return aScore - bScore;
       });
@@ -717,7 +717,7 @@ export function mergeCandidates(
         (s.refinedOverhang - oL) / oS,
         (s.footprint - fL) / fS,
         (s.maxCross - cL) / cS,
-        (s.surface - sL) / sS,
+        (sH - s.surface) / sS,
         (s.height - hL) / hS,
       ),
     }));

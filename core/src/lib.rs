@@ -160,6 +160,40 @@ pub fn refine_orientation_batch(
     out
 }
 
+/// Refine a direction via hill-climb (optional), then compute all 5 raw
+/// scoring metrics for the **refined** direction in a single mesh pass.
+///
+/// Returns 8 floats:
+///   [dir_x, dir_y, dir_z, overhang, footprint, max_cross, surface, height]
+///
+/// `iterations = 0` skips refinement (metrics computed for the normalised
+/// input direction directly). With `iterations > 0`, the hill-climb finds
+/// the nearest local overhang minimum, and ALL metrics are computed for
+/// that refined direction — ensuring the overhang score and the other 4
+/// metrics describe the same orientation.
+#[wasm_bindgen]
+pub fn score_orientation(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    dir_x: f32,
+    dir_y: f32,
+    dir_z: f32,
+    critical_angle_deg: f32,
+    iterations: u32,
+    seed: u32,
+) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let (dir, _) = normalise_dir([dir_x, dir_y, dir_z]);
+    let rng = rng::Rng::new(seed);
+    let (best_dir, _) = refine_once(&mesh, &dir, critical_angle_deg, iterations.min(500), rng);
+    let c = scoring::score_components(&best_dir, &mesh, critical_angle_deg, 64);
+    vec![
+        best_dir[0], best_dir[1], best_dir[2],
+        c.overhang, c.footprint, c.max_cross, c.surface_quality, c.height,
+    ]
+}
+
 fn reconstruct_mesh(positions: &[f32], normals: &[f32], areas: &[f32]) -> mesh::MeshData {
     let tri_count = normals.len() / 3;
     let normals_vec: Vec<[f32; 3]> = normals.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
@@ -321,5 +355,170 @@ mod tests {
         let a = refine_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
         let b = refine_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
         assert_eq!(a, b, "same seed → identical result");
+    }
+
+    // ---- score_orientation tests ----
+
+    #[test]
+    fn score_orientation_returns_8_values() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let out = score_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 0, 42);
+        assert_eq!(out.len(), 8, "should return 8 floats");
+    }
+
+    #[test]
+    fn score_orientation_zero_iterations_matches_raw_score() {
+        // With 0 iterations the direction is unchanged (just normalised),
+        // so the overhang metric must equal score_candidate for that direction.
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let out = score_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 0, 42);
+        let mesh = reconstruct_mesh(&positions, &normals, &areas);
+        let expected = scoring::score_candidate(&[0.0, 0.0, -1.0], &mesh, 30.0);
+        assert!((out[3] - expected).abs() < 1e-6, "overhang mismatch: got {} expected {}", out[3], expected);
+    }
+
+    #[test]
+    fn score_orientation_refined_does_not_worsens_overhang() {
+        // Hill-climb only accepts improvements, so the refined overhang must
+        // be <= the overhang at the starting direction.
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let mesh = reconstruct_mesh(&positions, &normals, &areas);
+        let start = scoring::score_candidate(&[0.0, 0.0, 1.0], &mesh, 30.0);
+        let out = score_orientation(&positions, &normals, &areas, 0.0, 0.0, 1.0, 30.0, 50, 42);
+        assert!(out[3] <= start + 1e-6, "refine must not worsen: start={} got={}", start, out[3]);
+    }
+
+    #[test]
+    fn score_orientation_is_deterministic() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let normals = vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+        let areas = vec![0.5, 0.5];
+        let a = score_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
+        let b = score_orientation(&positions, &normals, &areas, 0.0, 0.0, -1.0, 30.0, 50, 42);
+        assert_eq!(a, b, "same seed → identical result");
+    }
+
+    // ---- Solid cube tests ----
+
+    /// Unit cube (0,0,0)–(1,1,1), 12 triangles, outward normals, area 0.5 each.
+    fn unit_cube_data() -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+        let positions = vec![
+            // Bottom (z=0), normal (0,0,-1)
+            0.0,0.0,0.0,  1.0,0.0,0.0,  1.0,1.0,0.0,
+            0.0,0.0,0.0,  1.0,1.0,0.0,  0.0,1.0,0.0,
+            // Top (z=1), normal (0,0,1)
+            0.0,0.0,1.0,  1.0,0.0,1.0,  1.0,1.0,1.0,
+            0.0,0.0,1.0,  1.0,1.0,1.0,  0.0,1.0,1.0,
+            // Front (y=0), normal (0,-1,0)
+            0.0,0.0,0.0,  1.0,0.0,1.0,  1.0,0.0,0.0,
+            0.0,0.0,0.0,  0.0,0.0,1.0,  1.0,0.0,1.0,
+            // Back (y=1), normal (0,1,0)
+            0.0,1.0,0.0,  1.0,1.0,0.0,  1.0,1.0,1.0,
+            0.0,1.0,0.0,  1.0,1.0,1.0,  0.0,1.0,1.0,
+            // Left (x=0), normal (-1,0,0)
+            0.0,0.0,0.0,  0.0,1.0,0.0,  0.0,1.0,1.0,
+            0.0,0.0,0.0,  0.0,1.0,1.0,  0.0,0.0,1.0,
+            // Right (x=1), normal (1,0,0)
+            1.0,0.0,0.0,  1.0,1.0,0.0,  1.0,1.0,1.0,
+            1.0,0.0,0.0,  1.0,1.0,1.0,  1.0,0.0,1.0,
+        ];
+        let normals = vec![
+            0.0,0.0,-1.0, 0.0,0.0,-1.0,
+            0.0,0.0,1.0,  0.0,0.0,1.0,
+            0.0,-1.0,0.0, 0.0,-1.0,0.0,
+            0.0,1.0,0.0,  0.0,1.0,0.0,
+            -1.0,0.0,0.0, -1.0,0.0,0.0,
+            1.0,0.0,0.0,  1.0,0.0,0.0,
+        ];
+        let areas = vec![0.5; 12];
+        (positions, normals, areas)
+    }
+
+    #[test]
+    fn cube_face_down_zero_overhang() {
+        // dir = [0,0,-1] (pointing down in Z-up): bottom face has normal (0,0,-1),
+        // dot = 1.0 > cos(30°) → overhang faces ARE present.
+        // But wait: in the tool's convention, dir is the build direction (down).
+        // Faces pointing along dir (downward) need supports → they ARE overhang.
+        // A cube sitting flat on Z=0 face: bottom normals = (0,0,-1), dir = (0,0,-1).
+        // These faces point downward → cos_i = 1.0 > cos_crit → they ARE overhang.
+        // But physically, the bottom face sits on the build plate — no supports needed!
+        // The scoring function doesn't distinguish this (no height-field check in score_candidate).
+        // So overhang > 0 is expected for ANY face aligned with dir.
+        // For a cube with dir = [0, -1, 0]: front face (normal (0,-1,0)) has dot=1 → overhang.
+        // Only the 2 front triangles contribute: area 0.5 × 2 = 1.0, penalty = 1.0 × (1 - cos30°)
+        let (p, n, a) = unit_cube_data();
+        let out = score_orientation(&p, &n, &a, 0.0, -1.0, 0.0, 30.0, 0, 42);
+        let cos30 = (30.0_f32).to_radians().cos();
+        let expected_penalty = 1.0 * (1.0 - cos30); // 2 tris × 0.5 area × (dot - cos_crit)
+        assert!(
+            (out[3] - expected_penalty).abs() < 0.01,
+            "overhang for front-face-down cube: got {} expected ~{}",
+            out[3], expected_penalty
+        );
+    }
+
+    #[test]
+    fn cube_height_along_y_is_one() {
+        let (p, n, a) = unit_cube_data();
+        let out = score_orientation(&p, &n, &a, 0.0, -1.0, 0.0, 30.0, 0, 42);
+        // Height (index 7) along Y should be 1.0 (cube spans 0..1 on Y)
+        assert!(
+            (out[7] - 1.0).abs() < 0.01,
+            "height along Y should be 1.0, got {}",
+            out[7]
+        );
+    }
+
+    #[test]
+    fn cube_footprint_facing_face() {
+        let (p, n, a) = unit_cube_data();
+        // dir = [0,-1,0]: front face (normal (0,-1,0)) is face-on → full area
+        let out = score_orientation(&p, &n, &a, 0.0, -1.0, 0.0, 30.0, 0, 42);
+        // Footprint = sum |n·dir| × area for ALL triangles
+        // Front face: 2 tris, |1.0| × 0.5 = 0.5 each → 1.0
+        // Back face: 2 tris, |−1.0| × 0.5 = 0.5 each → 1.0
+        // Side faces: normals ⊥ dir → 0
+        // Total footprint = 2.0
+        assert!(
+            (out[4] - 2.0).abs() < 0.01,
+            "footprint facing a face should be 2.0 (front+back), got {}",
+            out[4]
+        );
+    }
+
+    #[test]
+    fn cube_metrics_match_score_components() {
+        // Verify that score_orientation returns the same values as the internal
+        // scoring functions for a solid cube.
+        let (p, n, a) = unit_cube_data();
+        let dir = [0.57735, -0.57735, 0.57735]; // (1,-1,1)/√3
+        let out = score_orientation(&p, &n, &a, dir[0], dir[1], dir[2], 30.0, 0, 42);
+        let mesh = reconstruct_mesh(&p, &n, &a);
+        let (nd, _) = normalise_dir(dir);
+        let c = scoring::score_components(&nd, &mesh, 30.0, 64);
+        assert!((out[3] - c.overhang).abs() < 1e-5, "overhang mismatch");
+        assert!((out[4] - c.footprint).abs() < 1e-5, "footprint mismatch");
+        assert!((out[5] - c.max_cross).abs() < 1e-5, "cross mismatch");
+        assert!((out[6] - c.surface_quality).abs() < 1e-5, "surface mismatch");
+        assert!((out[7] - c.height).abs() < 1e-5, "height mismatch");
     }
 }
