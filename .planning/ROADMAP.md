@@ -150,8 +150,8 @@ Plans: 4 plans
 
 Plans:
 
-- [ ] 05-01-PLAN.md — Rust ranking + selection + yaw modules with ground-truth tests; Cargo.toml dual-target feature scaffolding (TDD)
-- [ ] 05-02-PLAN.md — WASM `score_all_directions` / `rank_candidates` / `select_diverse` / `compute_norm_bounds` exports; shared `prepare_data_native` pipeline; drop self-referential tests; CLI binary `src/bin/cli.rs`
+- [x] 05-01-PLAN.md — Rust ranking + selection + yaw modules with ground-truth tests; Cargo.toml dual-target feature scaffolding (TDD)
+- [x] 05-02-PLAN.md — WASM `score_all_directions` / `rank_candidates` / `select_diverse` / `compute_norm_bounds` exports; shared `prepare_data_native` pipeline; drop self-referential tests; CLI binary `core/src/main.rs`
 - [ ] 05-03-PLAN.md — TS thin layer: strip `compute.ts` to types + `decimateForScore` + `WEIGHT_PRESETS`; delete `compute.test.ts`; simplify worker to single WASM dispatcher; update `main.ts`; single source-of-truth audit
 - [ ] 05-04-PLAN.md — Cross-verification: CLI reference outputs for 12 (STL × ranker × profile) combinations + human-verify browser UI parity
 
@@ -165,7 +165,7 @@ Plans:
 | 2. Viewport + Yaw + Export (Complete UX Loop) | 3/3 | ✅ Complete | 2026-07-11 |
 | 3. v2 Enhancements | 2/2 | ✅ Complete | - |
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
-| 5. Consolidate All Calculations in Rust | 0/4 | Planning | - |
+| 5. Consolidate All Calculations in Rust | 2/4 | Executing | - |
 | 4. v3 UX Polish | 0/3 | Not started | - |
 
 **Phase 2 detail (final):**

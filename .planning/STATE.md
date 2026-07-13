@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: active
-stopped_at: Phase 3.5 complete — scoring expansion & refinement delivered
-last_updated: "2026-07-13T10:15:00.000Z"
-last_activity: "2026-07-13 — Phase 3.5 verified: 12/12 success criteria met; 3 rankers, 8 profiles, seeded refine, UI switcher"
+status: executing
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-07-13T19:45:00.000Z"
+last_activity: 2026-07-13 -- Phase 05 plan 02 complete
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 4
-  total_plans: 11
+  total_plans: 14
   completed_plans: 11
-  percent: 85
+  percent: 71
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 4 — v3 UX Polish (next)
+**Current focus:** Phase 05 — rust-consolidation
 
 ## Current Position
 
-Phase: 3.5 (scoring-expansion) — ✅ Complete
-Plan: 2 of 2 (both complete)
-Status: Verified — 12/12 success criteria met
-Last activity: 2026-07-13 -- Phase 3.5 verified; profiles, seeded refine, TOPSIS, UI switcher delivered
+Phase: 05 (rust-consolidation) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 05
+Last activity: 2026-07-13 -- Phase 05 execution started
 
 Progress: [██████████████████] ~85%
 
@@ -89,6 +89,12 @@ Recent decisions affecting current work:
 - **[Phase 3.5 P02]** RefineFn callback injection enables pipeline testing without WASM dependency
 - **[Phase 3.5 P02]** xorshift32 PRNG eliminates click-to-click non-determinism in Varita Mágica refine
 - **[Phase 3.5 P02]** K=4 batch refine with refinedOverhang (min) + refineVariance (stddev) per candidate
+- **[Post-3.5]** Varita button removed (redundant — refinement already runs automatically in computeSlice via WASM batch refine)
+- **[Post-3.5]** All 3 rankers (`rankByWeights`, `rankByConsensus`, `rankByTopsis`) now use `refinedOverhang` instead of raw `overhangPenalty` — refinement results actually affect ranking
+- **[Post-3.5]** `mergeCandidates` sorts by `refinedOverhang` instead of raw `penalty` for better initial diversity selection
+- **[Post-3.5]** Profile-aware `mergeCandidates`: when weights are provided, sorts by weighted composite (min-max normalised) so diversity selection reflects the chosen profile
+- **[Post-3.5]** "Recalculate" button at bottom of config panel; enabled on dirty (profile/angle change), disabled on clean; triggers full recompute with current profile weights
+- **[Post-3.5]** Overlay live score now computes actual direction metrics (overhang/footprint/cross/surface/height) via consensus formula instead of nearest-candidate lookup — shows real score for all 5 axes
 
 ### Pending Todos
 
@@ -110,8 +116,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-13T08:12:52.340Z
-Stopped at: Completed 03.5-02-PLAN.md
+Last session: 2026-07-13T19:45:00.000Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
 
 ### Infrastructure State
