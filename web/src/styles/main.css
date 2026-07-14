@@ -79,6 +79,97 @@ h1 {
   color: var(--color-info);
 }
 
+/* ─── Drop Zone ─── */
+.drop-zone {
+  border: 2px dashed #444;
+  border-radius: 8px;
+  padding: 1.25rem;
+  text-align: center;
+  transition: all 0.2s;
+  margin-bottom: 0.85rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+.drop-zone.drag-over {
+  border-color: var(--color-accent);
+  background: rgba(74, 144, 217, 0.12);
+}
+.drop-zone p {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  margin-bottom: 0.4rem;
+}
+.file-label {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  border: none;
+  transition: background 0.15s;
+}
+.file-label:hover {
+  background: var(--color-accent-hover);
+}
+
+/* ─── Config Panel ─── */
+.config-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem;
+  margin-bottom: 0.75rem;
+}
+.config-panel h3 {
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+  color: #bbb;
+}
+.config-panel label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-mid);
+  margin-bottom: 0.3rem;
+}
+.config-panel input[type="range"] {
+  flex: 1;
+  max-width: 140px;
+  accent-color: var(--color-accent);
+}
+.config-panel select {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  accent-color: var(--color-accent);
+}
+.config-panel select option {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.hint {
+  color: #666;
+  font-size: 0.72rem;
+  margin-top: 0.2rem;
+}
+.config-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-mid);
+  margin-top: 0.4rem;
+  cursor: pointer;
+}
+.config-checkbox input[type="checkbox"] {
+  accent-color: var(--color-accent);
+}
+
 /* ─── Buttons ─── */
 .button {
   display: inline-block;
@@ -129,6 +220,85 @@ h1 {
 }
 #recalc-btn:not(:disabled):hover {
   background: var(--color-accent-hover);
+}
+
+/* ─── Results / Candidates ─── */
+#results h3 {
+  font-size: 0.8rem;
+  color: #bbb;
+  margin-bottom: 0.25rem;
+}
+#results ol {
+  margin-left: 1.1rem;
+  list-style: decimal;
+}
+#results li {
+  margin-bottom: 0.15rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  transition: background 0.1s;
+  color: #ccc;
+}
+#results li:hover {
+  background: rgba(74, 144, 217, 0.15);
+}
+#results li.active {
+  background: rgba(39, 174, 96, 0.2);
+  color: #fff;
+  font-weight: 600;
+}
+.results-placeholder {
+  color: #666;
+  font-style: italic;
+  font-size: 0.8rem;
+}
+#candidates-section {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+#candidates-section h3 {
+  font-size: 0.8rem;
+  color: #bbb;
+  margin-bottom: 0.25rem;
+}
+
+/* ─── Score Section (right panel) ─── */
+.score-top {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.score-big {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-warning);
+}
+.score-label {
+  font-size: 0.72rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sp-meta {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--color-text-mid);
+}
+.sp-meta b {
+  color: #ddd;
+}
+.sp-hint {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.68rem;
+  color: #777;
+  line-height: 1.4;
 }
 
 /* ─── Progress ─── */
