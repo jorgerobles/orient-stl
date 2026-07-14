@@ -1,4 +1,4 @@
-import type { Candidate } from './compute';
+import type { Candidate } from './types';
 
 function applyQuaternion(q: [number, number, number, number], v: [number, number, number]): [number, number, number] {
   const [w, x, y, z] = q;

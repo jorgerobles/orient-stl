@@ -4,7 +4,7 @@ export type LoadConvention = "z-up" | "y-up";
  * Apply the load-time axis convention to a flat xyz array.
  *
  * The tool's internal frame is Y-up: the build plate lies in the XZ plane and
- * +Y is the plate normal (see centering.ts → liftOntoPlate). STL files arrive
+ * +Y is the plate normal (see centering.ts → centroidTranslate). STL files arrive
  * in one of two conventions, selected by the user at load time:
  *
  *   'z-up' — STL's +Z is the vertical axis (most CAD output, default for most
