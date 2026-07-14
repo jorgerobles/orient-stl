@@ -635,24 +635,24 @@ export class CandidateList {
 
 **All other claims are tagged `[CITED]` or `[VERIFIED]` inline.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should CameraRig actually be extracted, given it's only 9 lines?**
+1. **Should CameraRig actually be extracted, given it's only 9 lines?** RESOLVED: Yes — extract as a minimal class (`positionForBoundingBox(bb)` + `reset()`). Honors success criteria #3 without over-extracting. Plan 02 Task 2 makes this an explicit extraction.
    - What we know: Success criteria #3 explicitly lists `CameraRig` alongside `GizmoController` and `DragHandler`. Current `resetCamera()` is 9 lines.
    - What's unclear: Whether the spirit of the criteria is "extract these 3 things" or "decompose Viewport aggressively."
    - Recommendation: **Extract CameraRig as a minimal class** (`positionForBoundingBox(bb)` + `reset()`). Honors the criteria without over-extracting. Planner should make this an explicit task so the decision is visible.
 
-2. **Should the axis-mapping "bug" (axis-y → world Z) be fixed as part of this refactor?**
+2. **Should the axis-mapping "bug" (axis-y → world Z) be fixed as part of this refactor?** RESOLVED: No — preserve current behavior and pin it with a regression test (DragHandler.test.ts, Pitfall 3). Investigating the mapping is a separate task.
    - What we know: The mapping is non-obvious and undocumented. It MIGHT be intentional (the ring colors suggest X=red, Y=green, Z=blue, but the drag rotates around different world axes).
    - What's unclear: Whether users rely on the current behavior.
    - Recommendation: **Preserve current behavior in the refactor. Pin it with a regression test. Open a separate task/ticket to investigate.** Do NOT silently "fix" it.
 
-3. **Do we add `happy-dom` for view-class tests, or stick with DI-only?**
+3. **Do we add `happy-dom` for view-class tests, or stick with DI-only?** RESOLVED: Start without happy-dom. Add it only if a specific test requires layout (e.g., `getBoundingClientRect`). The planner marks this as a "decide at execution time" item.
    - What we know: DI avoids the dependency entirely for AppController tests. View classes (`ScorePanel.render`) update `textContent` and `innerHTML` — testable with plain mock elements.
    - What's unclear: Whether any view test will need `getBoundingClientRect` (e.g., for progress-bar width assertions).
    - Recommendation: **Start without happy-dom.** Add it only if a specific test requires layout. The planner should mark this as a "decide at execution time" item.
 
-4. **Should the worker use the `Transferable` list for zero-copy metrics transfer?**
+4. **Should the worker use the `Transferable` list for zero-copy metrics transfer?** RESOLVED: Out of scope for Phase 6 (this is perf, not architecture). Captured as a deferred idea.
    - What we know: Current `postMessage` copies the `Float32Array` metrics buffer. Using `[metrics.buffer]` as the transfer list would zero-copy it.
    - What's unclear: Whether this is a measurable win for ~200-candidate result sets.
    - Recommendation: **Out of scope for Phase 6** (this is perf, not architecture). Capture as a deferred idea.
