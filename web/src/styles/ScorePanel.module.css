@@ -1,0 +1,70 @@
+.scoreTop {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.scoreBig {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-warning);
+}
+.scoreLabel {
+  font-size: 0.72rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.spMeta {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--color-text-mid);
+}
+.spMeta b {
+  color: #ddd;
+}
+.spRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+.spName {
+  width: 62px;
+  font-size: 0.72rem;
+  color: #bbb;
+}
+.spBar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.spBarFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.1s;
+}
+.spPct {
+  width: 28px;
+  text-align: right;
+  font-size: 0.72rem;
+  color: #ccc;
+}
+.spWeight {
+  width: 32px;
+  text-align: right;
+  font-size: 0.68rem;
+  color: #666;
+}
+.spHint {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.68rem;
+  color: #777;
+  line-height: 1.4;
+}
