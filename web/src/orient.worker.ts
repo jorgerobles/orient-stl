@@ -1,4 +1,4 @@
-import type { OriData, ComputeConfig, Candidate } from './types';
+import type { OriData, ComputeConfig, Candidate, WorkerMessage, WorkerRequest } from './types';
 
 let wasmReady: Promise<any> | null = null;
 
@@ -15,18 +15,14 @@ async function ensureWasm() {
   return wasmReady;
 }
 
-self.onmessage = async (e: MessageEvent) => {
-  const { data, config, weights, ranker, maxCandidates, minAngleDeg } = e.data as {
-    data: OriData; config: ComputeConfig;
-    weights: [number, number, number, number, number];
-    ranker: string; maxCandidates: number; minAngleDeg: number;
-  };
+self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
+  const { data, config, weights, ranker, maxCandidates, minAngleDeg } = e.data;
 
   const wasm = await ensureWasm();
-  if (!wasm) { self.postMessage({ type: 'error', message: 'WASM not loaded' }); return; }
+  if (!wasm) { self.postMessage({ type: 'error', message: 'WASM not loaded' } satisfies WorkerMessage); return; }
 
   const progressFn = (i: number, t: number) =>
-    self.postMessage({ type: 'progress', value: Math.round(i / t * 100) });
+    self.postMessage({ type: 'progress', value: Math.round(i / t * 100) } satisfies WorkerMessage);
 
   const metrics = wasm.score_all_directions(
     data.positions, data.normals, data.areas, data.directions,
@@ -61,5 +57,5 @@ self.onmessage = async (e: MessageEvent) => {
     });
   }
 
-  self.postMessage({ type: 'results', candidates });
+  self.postMessage({ type: 'results', candidates } satisfies WorkerMessage);
 };
