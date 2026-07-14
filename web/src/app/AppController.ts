@@ -163,6 +163,9 @@ export class AppController {
       this.deps.statusEl.textContent = 'Drag the rings to rotate. Click "Find Candidates" for suggestions.';
       this.markClean();
       this.deps.candidateList.hide();
+      this.deps.configPanel.enableFind(true);
+      this.deps.configPanel.enableExport(true);
+      this.deps.configPanel.enableRecalc(false);
     } catch (err) {
       this.deps.progressContainer.style.display = 'none';
       this.deps.statusEl.textContent = 'Error: ' + err;
@@ -440,10 +443,11 @@ export class AppController {
 
   private markDirty(): void {
     this.deps.state.set('isComputeDirty', true);
-    // Recalc button enabled via CSS :not([disabled]) — state drives behavior
+    this.deps.configPanel.enableRecalc(true);
   }
 
   private markClean(): void {
     this.deps.state.set('isComputeDirty', false);
+    this.deps.configPanel.enableRecalc(false);
   }
 }
