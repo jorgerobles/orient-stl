@@ -212,6 +212,35 @@ pub fn score_orientation(
     ]
 }
 
+/// Score a single direction using the SAME seed derivation as score_all_directions.
+/// This ensures the live panel gets identical metrics to the candidate list.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn score_direction(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    dir_x: f32,
+    dir_y: f32,
+    dir_z: f32,
+    critical_angle_deg: f32,
+    refine_iters: u32,
+) -> Vec<f32> {
+    let mesh = reconstruct_mesh(positions, normals, areas);
+    let (dir_n, _) = normalise_dir([dir_x, dir_y, dir_z]);
+    let (best_dir, _) = if refine_iters > 0 {
+        let rng = rng::Rng::new(rng::seed_from_direction(&dir_n, 0));
+        refine_once(&mesh, &dir_n, critical_angle_deg, refine_iters.min(500), rng)
+    } else {
+        (dir_n, 0.0)
+    };
+    let c = scoring::score_components(&best_dir, &mesh, critical_angle_deg, 64);
+    vec![
+        best_dir[0], best_dir[1], best_dir[2],
+        c.overhang, c.footprint, c.max_cross, c.surface_quality, c.height,
+    ]
+}
+
 // ---------------------------------------------------------------------------
 // New WASM exports (Plan 02)
 // ---------------------------------------------------------------------------
@@ -275,6 +304,7 @@ pub fn score_all_directions(
 }
 
 /// Rank candidates by method. Input is N×13 flat metrics (output of score_all_directions).
+/// norm_lo/norm_hi: optional [5]f32 min/max for all-directions normalization (empty = use candidate set).
 /// Returns N×2 [index, composite_score] sorted by method's convention.
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
@@ -282,6 +312,8 @@ pub fn rank_candidates(
     metrics_flat: &[f32],
     weights: &[f32],
     method: &str,
+    norm_lo: &[f32],
+    norm_hi: &[f32],
 ) -> Vec<f32> {
     let n = metrics_flat.len() / 13;
     let mut metrics = Vec::with_capacity(n);
@@ -307,17 +339,32 @@ pub fn rank_candidates(
         w_height: weights[4],
     };
 
+    let (norm_lo_owned, norm_hi_owned) = if norm_lo.len() >= 5 && norm_hi.len() >= 5 {
+        (Some([norm_lo[0], norm_lo[1], norm_lo[2], norm_lo[3], norm_lo[4]]),
+         Some([norm_hi[0], norm_hi[1], norm_hi[2], norm_hi[3], norm_hi[4]]))
+    } else {
+        (None, None)
+    };
+
     let ranked = match method {
-        "weights" => ranking::rank_by_weights(&metrics, &w),
-        "consensus" => ranking::rank_by_consensus(&metrics),
+        "weights" => ranking::rank_by_weights_with_bounds(&metrics, &w, norm_lo_owned.as_ref(), norm_hi_owned.as_ref()),
+        "consensus" => ranking::rank_by_consensus_with_bounds(&metrics, &w, norm_lo_owned.as_ref(), norm_hi_owned.as_ref()),
         "topsis" => ranking::rank_by_topsis(&metrics, &w),
         _ => vec![],
     };
 
+    let w_sum: f32 = weights.iter().sum();
+    let w_sum_inv = if w_sum > 1e-9 { 1.0 / w_sum } else { 1.0 };
+
     let mut out = Vec::with_capacity(ranked.len() * 2);
     for (idx, score) in ranked {
+        // Normalize all scores to [0,1] higher=better for consistent display
+        let display_score = match method {
+            "weights" => 1.0 - (score * w_sum_inv).clamp(0.0, 1.0),
+            _ => score.clamp(0.0, 1.0),
+        };
         out.push(idx as f32);
-        out.push(score);
+        out.push(display_score);
     }
     out
 }
@@ -667,11 +714,15 @@ mod tests {
     fn cube_height_along_y_is_one() {
         let (p, n, a) = unit_cube_data();
         let out = score_orientation(&p, &n, &a, 0.0, -1.0, 0.0, 30.0, 0, 42);
-        // Height (index 7) along Y should be 1.0 (cube spans 0..1 on Y)
+        // Height risk = overhang × height (derived metric).
+        // Unit cube dir[0,-1,0]: overhang ≈ 0.134 (2 front tris × 0.5 area × (1-cos30)),
+        // height = 1.0 (spans 0..1 on Y), so height_risk ≈ 0.134
+        let overhang = out[3];
+        let expected = overhang * 1.0;
         assert!(
-            (out[7] - 1.0).abs() < 0.01,
-            "height along Y should be 1.0, got {}",
-            out[7]
+            (out[7] - expected).abs() < 0.01,
+            "height risk along Y: got {} expected {}",
+            out[7], expected
         );
     }
 

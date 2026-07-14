@@ -16,6 +16,7 @@ export interface AppStateData {
     areas: Float32Array;
   } | null;
   normBounds: { lo: number[]; hi: number[] } | null;
+  bboxDiagonal: number;
   loadConvention: LoadConvention;
 }
 

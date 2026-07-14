@@ -5,9 +5,9 @@ import { MAX_FILE_BYTES } from './constants';
 let wasmReady = false;
 
 export async function initWasm(): Promise<void> {
-  await init();
-  wasmReady = true;
-  console.log('WASM initialized');
+    await init();
+    wasmReady = true;
+    console.log('WASM initialized');
 }
 
 export async function loadSTLBytes(file: File): Promise<Uint8Array> {

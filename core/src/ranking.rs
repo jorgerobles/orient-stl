@@ -28,40 +28,40 @@ pub struct CandidateMetrics {
     pub shadowed: f32,
 }
 
-/// Weighted-sum ranking: min-max normalize each column, apply weights,
-/// sort ascending by composite score (lower = better).
-pub fn rank_by_weights(
+pub fn rank_by_weights(metrics: &[CandidateMetrics], w: &ScoreWeights) -> Vec<(usize, f32)> {
+    rank_by_weights_with_bounds(metrics, w, None, None)
+}
+
+pub fn rank_by_weights_with_bounds(
     metrics: &[CandidateMetrics],
     w: &ScoreWeights,
+    norm_lo: Option<&[f32; 5]>,
+    norm_hi: Option<&[f32; 5]>,
 ) -> Vec<(usize, f32)> {
     let n = metrics.len();
     if n == 0 {
         return vec![];
     }
 
-    // Column min/max in one pass.
-    let mut o_lo = f32::INFINITY;
-    let mut o_hi = f32::NEG_INFINITY;
-    let mut f_lo = f32::INFINITY;
-    let mut f_hi = f32::NEG_INFINITY;
-    let mut c_lo = f32::INFINITY;
-    let mut c_hi = f32::NEG_INFINITY;
-    let mut s_lo = f32::INFINITY;
-    let mut s_hi = f32::NEG_INFINITY;
-    let mut h_lo = f32::INFINITY;
-    let mut h_hi = f32::NEG_INFINITY;
-    for m in metrics {
-        if m.overhang < o_lo { o_lo = m.overhang; }
-        if m.overhang > o_hi { o_hi = m.overhang; }
-        if m.footprint < f_lo { f_lo = m.footprint; }
-        if m.footprint > f_hi { f_hi = m.footprint; }
-        if m.max_cross < c_lo { c_lo = m.max_cross; }
-        if m.max_cross > c_hi { c_hi = m.max_cross; }
-        if m.surface < s_lo { s_lo = m.surface; }
-        if m.surface > s_hi { s_hi = m.surface; }
-        if m.height < h_lo { h_lo = m.height; }
-        if m.height > h_hi { h_hi = m.height; }
-    }
+    let (o_lo, o_hi, f_lo, f_hi, c_lo, c_hi, s_lo, s_hi, h_lo, h_hi) = match (norm_lo, norm_hi) {
+        (Some(lo), Some(hi)) => (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], lo[3], hi[3], lo[4], hi[4]),
+        _ => {
+            let (mut lo, mut hi) = ([f32::INFINITY; 5], [f32::NEG_INFINITY; 5]);
+            for m in metrics {
+                if m.overhang < lo[0] { lo[0] = m.overhang; }
+                if m.overhang > hi[0] { hi[0] = m.overhang; }
+                if m.footprint < lo[1] { lo[1] = m.footprint; }
+                if m.footprint > hi[1] { hi[1] = m.footprint; }
+                if m.max_cross < lo[2] { lo[2] = m.max_cross; }
+                if m.max_cross > hi[2] { hi[2] = m.max_cross; }
+                if m.surface < lo[3] { lo[3] = m.surface; }
+                if m.surface > hi[3] { hi[3] = m.surface; }
+                if m.height < lo[4] { lo[4] = m.height; }
+                if m.height > hi[4] { hi[4] = m.height; }
+            }
+            (lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], lo[3], hi[3], lo[4], hi[4])
+        }
+    };
 
     let o_span = (o_hi - o_lo).max(1e-9);
     let f_span = (f_hi - f_lo).max(1e-9);
@@ -70,12 +70,13 @@ pub fn rank_by_weights(
     let h_span = (h_hi - h_lo).max(1e-9);
 
     // surface is a BENEFIT metric → invert: (sHi - val) / span
+    let clamp = |v: f32| v.clamp(0.0, 1.0);
     let composite = |m: &CandidateMetrics| -> f32 {
-        let on = (m.overhang - o_lo) / o_span;
-        let fn_ = (m.footprint - f_lo) / f_span;
-        let cn = (m.max_cross - c_lo) / c_span;
-        let sn = (s_hi - m.surface) / s_span; // inverted
-        let hn = (m.height - h_lo) / h_span;
+        let on = clamp((m.overhang - o_lo) / o_span);
+        let fn_ = clamp((m.footprint - f_lo) / f_span);
+        let cn = clamp((m.max_cross - c_lo) / c_span);
+        let sn = clamp((s_hi - m.surface) / s_span); // inverted
+        let hn = clamp((m.height - h_lo) / h_span);
         w.w_overhang * on
             + w.w_footprint * fn_
             + w.w_cross * cn
@@ -93,36 +94,67 @@ pub fn rank_by_weights(
     scores
 }
 
-/// Consensus (minimax) ranking: 1 − max(normalized costs) including shadowed
-/// as a 6th term. Higher composite = better. Sort descending.
-pub fn rank_by_consensus(metrics: &[CandidateMetrics]) -> Vec<(usize, f32)> {
+/// Weighted consensus (minimax) ranking: normalize each metric to [0,1],
+/// apply profile weights, take weighted max.
+///
+/// `score = 1 − max(w·o_n, w·f_n, w·c_n, w·s_n_inv, w·h_n) / max_weight`
+///
+/// Higher composite = better. Sort descending.
+pub fn rank_by_consensus(metrics: &[CandidateMetrics], w: &ScoreWeights) -> Vec<(usize, f32)> {
+    rank_by_consensus_with_bounds(metrics, w, None, None)
+}
+
+pub fn rank_by_consensus_with_bounds(
+    metrics: &[CandidateMetrics],
+    w: &ScoreWeights,
+    norm_lo: Option<&[f32; 5]>,
+    norm_hi: Option<&[f32; 5]>,
+) -> Vec<(usize, f32)> {
     let n = metrics.len();
     if n == 0 {
         return vec![];
     }
 
-    // 6 terms in the max: overhang, footprint, max_cross, shadowed, surface(inverted), height
-    let min_max_span = |extract: fn(&CandidateMetrics) -> f32| -> (f32, f32, f32) {
-        let mut lo = f32::INFINITY;
-        let mut hi = f32::NEG_INFINITY;
-        for m in metrics {
-            let v = extract(m);
-            if v < lo { lo = v; }
-            if v > hi { hi = v; }
-        }
-        let span = (hi - lo).max(1e-9);
-        (lo, hi, span)
-    };
+    let clamp = |v: f32| v.clamp(0.0, 1.0);
+    let norm = |lo: f32, span: f32, v: f32| -> f32 { clamp((v - lo) / span) };
+    let invert = |lo: f32, hi: f32, span: f32, v: f32| -> f32 { clamp((hi - v) / span) };
 
-    let norm = |lo: f32, span: f32, v: f32| -> f32 { (v - lo) / span };
-    let invert = |lo: f32, hi: f32, span: f32, v: f32| -> f32 { (hi - v) / span };
+    let (o_lo, o_sp, f_lo, f_sp, c_lo, c_sp, s_lo, s_hi, s_sp, h_lo, h_sp) =
+        match (norm_lo, norm_hi) {
+            (Some(lo), Some(hi)) => (
+                lo[0], (hi[0] - lo[0]).max(1e-9),
+                lo[1], (hi[1] - lo[1]).max(1e-9),
+                lo[2], (hi[2] - lo[2]).max(1e-9),
+                lo[3], hi[3], (hi[3] - lo[3]).max(1e-9),
+                lo[4], (hi[4] - lo[4]).max(1e-9),
+            ),
+            _ => {
+                let mut lo = [f32::INFINITY; 5];
+                let mut hi = [f32::NEG_INFINITY; 5];
+                for m in metrics {
+                    if m.overhang < lo[0] { lo[0] = m.overhang; }
+                    if m.overhang > hi[0] { hi[0] = m.overhang; }
+                    if m.footprint < lo[1] { lo[1] = m.footprint; }
+                    if m.footprint > hi[1] { hi[1] = m.footprint; }
+                    if m.max_cross < lo[2] { lo[2] = m.max_cross; }
+                    if m.max_cross > hi[2] { hi[2] = m.max_cross; }
+                    if m.surface < lo[3] { lo[3] = m.surface; }
+                    if m.surface > hi[3] { hi[3] = m.surface; }
+                    if m.height < lo[4] { lo[4] = m.height; }
+                    if m.height > hi[4] { hi[4] = m.height; }
+                }
+                (
+                    lo[0], (hi[0] - lo[0]).max(1e-9),
+                    lo[1], (hi[1] - lo[1]).max(1e-9),
+                    lo[2], (hi[2] - lo[2]).max(1e-9),
+                    lo[3], hi[3], (hi[3] - lo[3]).max(1e-9),
+                    lo[4], (hi[4] - lo[4]).max(1e-9),
+                )
+            }
+        };
 
-    let (o_lo, _, o_sp) = min_max_span(|m| m.overhang);
-    let (f_lo, _, f_sp) = min_max_span(|m| m.footprint);
-    let (c_lo, _, c_sp) = min_max_span(|m| m.max_cross);
-    let (s_lo, s_hi, s_sp) = min_max_span(|m| m.surface);
-    let (h_lo, _, h_sp) = min_max_span(|m| m.height);
-    let (sh_lo, _, sh_sp) = min_max_span(|m| m.shadowed);
+    let max_w = w.w_overhang.max(w.w_footprint).max(w.w_cross).max(w.w_surface).max(w.w_height);
+    let norm_div = if max_w > 1e-12 { max_w } else { 1.0 };
 
     let mut scores: Vec<(usize, f32)> = (0..n)
         .map(|i| {
@@ -130,11 +162,14 @@ pub fn rank_by_consensus(metrics: &[CandidateMetrics]) -> Vec<(usize, f32)> {
             let o_n = norm(o_lo, o_sp, m.overhang);
             let f_n = norm(f_lo, f_sp, m.footprint);
             let c_n = norm(c_lo, c_sp, m.max_cross);
-            let sh_n = norm(sh_lo, sh_sp, m.shadowed);
-            let q_n = invert(s_lo, s_hi, s_sp, m.surface); // surface inverted to cost
+            let q_n = invert(s_lo, s_hi, s_sp, m.surface);
             let h_n = norm(h_lo, h_sp, m.height);
-            let consensus = 1.0 - o_n.max(f_n).max(c_n).max(sh_n).max(q_n).max(h_n);
-            (i, consensus)
+            let wom = (w.w_overhang * o_n)
+                .max(w.w_footprint * f_n)
+                .max(w.w_cross * c_n)
+                .max(w.w_surface * q_n)
+                .max(w.w_height * h_n);
+            (i, 1.0 - wom / norm_div)
         })
         .collect();
 
@@ -387,42 +422,28 @@ mod tests {
     /// works out.
     #[test]
     fn rank_by_consensus_three_candidates_hand_computed() {
+        // Each candidate has only one metric at max (value=1), others at 0.
+        // Weights: resin-biased [0.5, 1, 2, 0.5, 0.5], max_w=2.
+        // Weighted costs: C0 overhang=0.5, C1 footprint=1.0, C2 cross=2.0
+        // Normalised by /2: C0=0.25, C1=0.5, C2=0.0 (worst = C1)
         let candidates = vec![
-            CandidateMetrics {
-                overhang: 0.0,
-                footprint: 2.0,
-                max_cross: 1.0,
-                surface: 1.0,
-                height: 1.0,
-                shadowed: 0.0,
-            },
-            CandidateMetrics {
-                overhang: 1.0,
-                footprint: 1.0,
-                max_cross: 1.0,
-                surface: 2.0,
-                height: 0.5,
-                shadowed: 0.5,
-            },
-            CandidateMetrics {
-                overhang: 0.5,
-                footprint: 0.5,
-                max_cross: 0.5,
-                surface: 1.5,
-                height: 0.0,
-                shadowed: 1.0,
-            },
+            CandidateMetrics { overhang: 1.0, footprint: 0.0, max_cross: 0.0, surface: 0.0, height: 0.0, shadowed: 0.0 },
+            CandidateMetrics { overhang: 0.0, footprint: 1.0, max_cross: 0.0, surface: 0.0, height: 0.0, shadowed: 0.0 },
+            CandidateMetrics { overhang: 0.0, footprint: 0.0, max_cross: 0.0, surface: 0.0, height: 1.0, shadowed: 0.0 },
         ];
-        let ranked = rank_by_consensus(&candidates);
+        let w = ScoreWeights { w_overhang: 0.5, w_footprint: 1.0, w_cross: 2.0, w_surface: 0.5, w_height: 0.5 };
+        let ranked = rank_by_consensus(&candidates, &w);
         assert_eq!(ranked.len(), 3);
-        // Consensus = 1 - max(normalized_costs).
-        // C0: max(0, 1, 1, 0, 1, 1) = 1.0 → 0.0
-        // C1: max(1, 0.333, 1, 0.5, 0, 0.5) = 1.0 → 0.0
-        // C2: max(0.5, 0, 0, 1, 0.5, 0) = 1.0 → 0.0
-        // All three have at least one cost at 1.0, so consensus is 0 for all.
-        // The test verifies we get 3 results back (ranking is stable).
-        assert!(ranked.iter().all(|r| r.1.abs() < 1e-5),
-            "all three candidates have max cost = 1.0 → consensus = 0.0");
+        // C2 (height=1, w=0.5): wom = 0.5*0 + 0.5*0 + 2.0*0 + 0.5*0 + 0.5*1 = 0.5, sc = 1-0.5/2 = 0.75
+        // C0 (ov=1, w=0.5): wom = 0.5*1 = 0.5, sc = 1-0.5/2 = 0.75
+        // C1 (fp=1, w=1.0): wom = 1.0*1 = 1.0, sc = 1-1.0/2 = 0.5
+        // C0 and C2 tie at 0.75; both rank above C1 (0.5)
+        assert_eq!(ranked[0].0, 0, "C0 should rank first (or tied)");
+        assert!((ranked[0].1 - 0.75).abs() < 1e-5);
+        assert_eq!(ranked[1].0, 2, "C2 should rank second (or tied)");
+        assert!((ranked[1].1 - 0.75).abs() < 1e-5);
+        assert_eq!(ranked[2].0, 1, "C1 should rank last");
+        assert!((ranked[2].1 - 0.5).abs() < 1e-5);
     }
 
     // -----------------------------------------------------------------------
@@ -500,7 +521,9 @@ mod tests {
         assert!(rank_by_weights(&[], &ScoreWeights {
             w_overhang: 1.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 1.0, w_height: 1.0,
         }).is_empty());
-        assert!(rank_by_consensus(&[]).is_empty());
+        assert!(rank_by_consensus(&[], &ScoreWeights {
+            w_overhang: 1.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 1.0, w_height: 1.0,
+        }).is_empty());
         assert!(rank_by_topsis(&[], &ScoreWeights {
             w_overhang: 1.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 1.0, w_height: 1.0,
         }).is_empty());

@@ -13,6 +13,7 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 - [x] **Phase 5: Consolidate All Calculations in Rust** — Move all metrics, rankings, selection, and yaw from TS to Rust. Single WASM call replaces worker-based computeSlice. Rust CLI binary for independent verification. TS becomes rendering-only. Ground-truth tests replace self-referential tests.
 - [-] **Phase 4: v3 UX Polish** — Dropped (YAGNI — thumbnail strip, favorites, ZIP export not essential for core value proposition)
 - [x] **Phase 6: Frontend Architecture Refactor** — Split god module, introduce state management, modularize Viewport, accessibility, CSS extraction, proper typing
+- [ ] **Phase 7: Correctness Fixes + H11 Scoring** — Fix non-tangent refine perturbation, area-weighted center of mass, delete dead yaw subgraph, wire shadowed-overhang (H11) into the composite score
 
 ## Phase Details
 
@@ -155,7 +156,7 @@ Plans:
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4 → 6
+**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -165,7 +166,8 @@ Plans:
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
 | 5. Consolidate All Calculations in Rust | 4/4 | ✅ Complete | 2026-07-13 |
 | 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
-| 6. Frontend Architecture Refactor | 4/4 | ✅ Complete | 2026-07-14 |
+| 6. Frontend Architecture Refactor | 3/4 | Complete    | 2026-07-14 |
+| 7. Correctness Fixes + H11 Scoring | 0/4 | In Progress | — |
 
 **Phase 2 detail (final):**
 
@@ -195,7 +197,7 @@ Plans:
   11. Zero unused exports (e.g., `liftOntoPlate`)
   12. All empty catch blocks either removed or given explicit recovery
 
-**Plans:** 4/4 plans executed
+**Plans:** 3/4 plans complete
 
 Plans:
 
@@ -203,3 +205,28 @@ Plans:
 - [x] 06-02-PLAN.md — AppState store (EventTarget) + Viewport decomposition (GizmoController, DragHandler, CameraRig) with Pitfall 3 axis-mapping regression test
 - [x] 06-03-PLAN.md — Split main.ts into AppController + view classes (ScorePanel, ConfigPanel, CandidateList, FileDrop) + typed worker messages (atomic)
 - [x] 06-04-PLAN.md — Accessibility (keyboard rotation, ARIA, semantic HTML) + empty catch cleanup + final 12-criterion verification
+
+### Phase 7: Correctness Fixes + H11 Scoring
+
+**Goal**: Fix three correctness/quality bugs surfaced by code review and wire the resin-critical shadowed-overhang metric (H11) into the composite score so it actually affects ranking (today it is displayed but never scored).
+**Mode**: TDD (Red-Green-Refactor)
+**Depends on**: Phase 6
+**Requirements**: (none — review-driven correctness + resin-scoring completion)
+**Success Criteria** (what must be TRUE):
+
+  1. `refine_once` perturbation is perpendicular to the current direction (|dot| < 1e-5), built via `perpendicular_basis` — no spurious radial component
+  2. `center_of_mass` is area-weighted (Σ area·centroid / Σ area), not the raw vertex centroid; `check_stability` uses it; the unused `hull` param is removed
+  3. The dead yaw subgraph (`compute_default_yaw` + 7 dependents) is deleted from candidates.rs
+  4. `ScoreWeights` (Rust + TS) carries `w_shadowed`; `score_components`/`compute_norm_bounds`/`rank_candidates`/`score_direction` carry shadowed end-to-end
+  5. `rank_by_weights_with_bounds` (and consensus/topsis) normalize shadowed as a COST and add `w_shadowed * shn` to the composite
+  6. All 8 profile JSONs define `wShadowed`; resin-biased penalizes cavity-forming orientations
+  7. `cargo test` passes; WASM rebuilt; `make type-check` + `make test` pass
+
+**Plans:** 4 plans (waves: 1–3 parallel, 4 serialized after)
+
+Plans:
+
+- [ ] 07-01-PLAN.md — Fix non-tangent perturbation in refine_once (reuse perpendicular_basis)
+- [ ] 07-02-PLAN.md — Area-weighted center of mass + remove unused hull param from check_stability
+- [ ] 07-03-PLAN.md — Delete dead yaw subgraph in candidates.rs (compute_default_yaw + chain)
+- [ ] 07-04-PLAN.md — Wire H11 shadowed-overhang into composite score (Rust ranking + WASM exports + TS + profiles)

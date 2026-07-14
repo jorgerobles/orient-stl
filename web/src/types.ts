@@ -12,9 +12,9 @@ export function defaultConfig(): OrientConfig {
     mode: "hull",
     criticalAngleDeg: 30,
     dedupeAngleDeg: 3,
-    refineIterations: 0,
+    refineIterations: 50,
     excludeUnstable: true,
-    maxCandidates: 10,
+    maxCandidates: 20,
   };
 }
 
@@ -35,6 +35,7 @@ export interface Candidate {
   maxCross: number;
   shadowed: number;
   surfaceQuality: number;
+  /** Height risk = raw_height_mm × overhang_penalty (derived metric) */
   estHeight: number;
   refinedOverhang: number;
   refineVariance: number;
@@ -76,4 +77,6 @@ export interface WorkerRequest {
   ranker: string;
   maxCandidates: number;
   minAngleDeg: number;
+  normLo: number[] | null;
+  normHi: number[] | null;
 }

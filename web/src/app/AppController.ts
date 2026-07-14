@@ -11,12 +11,11 @@ import { decimateForScore } from '../compute';
 import { applyConvention } from '../convention';
 import type { LoadConvention } from '../convention';
 import { dirFromQuat } from '../quaternion';
-import { score_orientation, compute_norm_bounds as wasm_compute_norm_bounds } from '../../pkg/orient_core.js';
+import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds } from '../../pkg/orient_core.js';
 import { WEIGHT_PRESETS } from '../profiles';
-import { nearestCandidateScore } from '../nearestScore';
 import { exportSTL } from '../exportSTL';
 import { rotatePositions } from '../rotate';
-import { DECIMATE_TARGET, STORAGE_KEY, SCHEMA_VERSION, MIN_ANGLE_DEG, DEFAULT_REFINE_SEED, DEFAULT_PROFILE, DEFAULT_RANKER } from '../constants';
+import { DECIMATE_TARGET, STORAGE_KEY, SCHEMA_VERSION, MIN_ANGLE_DEG, DEFAULT_PROFILE, DEFAULT_RANKER } from '../constants';
 import { PROFILE_LABELS, RANKER_LABELS, RANKER_HINTS } from '../views/ConfigPanel';
 
 // ── Dependency Injection Contract ──
@@ -39,6 +38,19 @@ export interface AppControllerDeps {
 }
 
 const paint = () => new Promise<void>((r) => setTimeout(r, 0));
+
+export function bboxDiagonalFromPositions(pos: Float32Array): number {
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  const dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
 
 interface StoredConfig {
   version: number; profile: string; ranker: string;
@@ -150,6 +162,9 @@ export class AppController {
       this.deps.viewport.resetCamera();
       await paint();
 
+      const diag = bboxDiagonalFromPositions(fullData.positions);
+      this.deps.state.set('bboxDiagonal', diag);
+
       const decimated = decimateForScore(fullData, DECIMATE_TARGET);
       this.deps.state.set('liveData', { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas });
       this.computeNormBounds(fullData);
@@ -215,8 +230,8 @@ export class AppController {
     const config = this.deps.state.get('config');
     let raw: Float32Array;
     try {
-      raw = score_orientation(liveData.positions, liveData.normals, liveData.areas,
-        dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, DEFAULT_REFINE_SEED);
+      raw = score_direction(liveData.positions, liveData.normals, liveData.areas,
+        dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0);
     } catch (err) {
       raw = new Float32Array(8);
       console.warn('score_orientation failed, using fallback', err);
@@ -226,26 +241,27 @@ export class AppController {
     const { lo, hi } = normBounds;
     const clamp = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
     const span = (i: number) => Math.max(hi[i] - lo[i], 1e-9);
+    const bboxDiag = this.deps.state.get('bboxDiagonal');
+    const heightCost = clamp((height - lo[4]) / span(4));
     const costs = [
       clamp((overhang - lo[0]) / span(0)), clamp((foot - lo[1]) / span(1)),
       clamp((cross - lo[2]) / span(2)), clamp((hi[3] - surf) / span(3)),
-      clamp((height - lo[4]) / span(4)),
+      heightCost,
     ];
 
     const profile = this.deps.state.get('currentProfile');
     const w = WEIGHT_PRESETS[profile] ?? WEIGHT_PRESETS[DEFAULT_PROFILE];
     const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight];
 
+    const ranker = this.deps.state.get('currentRanker');
     let score: number;
-    const candidates = this.deps.state.get('candidates');
-    if (candidates.length > 0) {
-      score = nearestCandidateScore([q[0], q[1], q[2], q[3]], candidates).score;
+    const wSum = weights.reduce((a, b) => a + b, 0);
+    const maxW = Math.max(...weights);
+    if (ranker === 'consensus') {
+      score = maxW > 0 ? 1 - costs.reduce((acc, c, i) => Math.max(acc, weights[i] * c), 0) / maxW : 1 - costs[0];
     } else {
-      const wSum = weights.reduce((a, b) => a + b, 0);
       score = wSum > 0 ? 1 - costs.reduce((acc, c, i) => acc + weights[i] * c, 0) / wSum : 1 - costs[0];
     }
-
-    const ranker = this.deps.state.get('currentRanker');
     this.deps.scorePanel.update({
       score,
       costs,
@@ -297,21 +313,7 @@ export class AppController {
         case 'results': {
           const merged = msg.candidates;
           if (merged.length > 0) {
-            const normLo: number[] = [
-              Math.min(...merged.map((c) => c.refinedOverhang)),
-              Math.min(...merged.map((c) => c.footprint)),
-              Math.min(...merged.map((c) => c.maxCross)),
-              Math.min(...merged.map((c) => c.surfaceQuality)),
-              Math.min(...merged.map((c) => c.estHeight)),
-            ];
-            const normHi: number[] = [
-              Math.max(...merged.map((c) => c.refinedOverhang)),
-              Math.max(...merged.map((c) => c.footprint)),
-              Math.max(...merged.map((c) => c.maxCross)),
-              Math.max(...merged.map((c) => c.surfaceQuality)),
-              Math.max(...merged.map((c) => c.estHeight)),
-            ];
-            this.deps.state.set('normBounds', { lo: normLo, hi: normHi });
+            merged.sort((a, b) => b.compositeScore - a.compositeScore);
             this.deps.state.set('candidates', merged);
             this.deps.state.set('currentIndex', 0);
           }
@@ -328,10 +330,12 @@ export class AppController {
       console.error('Worker error:', err);
       this.finishCompute();
     };
+    const nb = this.deps.state.get('normBounds');
     worker.postMessage({
       data: decimated, config: computeConfig, weights: wArr,
       ranker: this.deps.state.get('currentRanker'),
       maxCandidates: computeConfig.maxCandidates, minAngleDeg: MIN_ANGLE_DEG,
+      normLo: nb?.lo ?? null, normHi: nb?.hi ?? null,
     } satisfies WorkerRequest);
   }
 
