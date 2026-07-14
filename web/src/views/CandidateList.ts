@@ -25,6 +25,7 @@ export class CandidateList {
           `<span class="${styles.infoIcon}" title="o: ${c.overhangPenalty.toFixed(0)} f: ${c.footprint.toFixed(0)} x: ${c.maxCross.toFixed(0)} s: ${(c.shadowed * 100).toFixed(0)}% q: ${c.surfaceQuality.toFixed(2)} · H: ${c.estHeight.toFixed(1)}mm · ${c.stability}">ⓘ</span></li>`,
       )
       .join('');
+    if (candidates.length > 0) this.show();
   }
 
   show(): void {
