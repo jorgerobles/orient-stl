@@ -1,0 +1,55 @@
+.configPanel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem;
+  margin-bottom: 0.75rem;
+}
+.configPanel h3 {
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+  color: #bbb;
+}
+.configPanel label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-mid);
+  margin-bottom: 0.3rem;
+}
+.configPanel input[type="range"] {
+  flex: 1;
+  max-width: 140px;
+  accent-color: var(--color-accent);
+}
+.configPanel select {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  accent-color: var(--color-accent);
+}
+.configPanel select option {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.hint {
+  color: #666;
+  font-size: 0.72rem;
+  margin-top: 0.2rem;
+}
+.configCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-mid);
+  margin-top: 0.4rem;
+  cursor: pointer;
+}
+.configCheckbox input[type="checkbox"] {
+  accent-color: var(--color-accent);
+}

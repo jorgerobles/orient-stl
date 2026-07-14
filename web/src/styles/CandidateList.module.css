@@ -1,0 +1,44 @@
+.resultsOl {
+  margin-left: 1.1rem;
+  list-style: decimal;
+}
+.resultsLi {
+  margin-bottom: 0.15rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  transition: background 0.1s;
+  color: #ccc;
+}
+.resultsLi:hover {
+  background: rgba(74, 144, 217, 0.15);
+}
+.active {
+  background: rgba(39, 174, 96, 0.2);
+  color: #fff;
+  font-weight: 600;
+}
+.infoIcon {
+  cursor: help;
+  opacity: 0.4;
+  font-size: 0.78rem;
+  margin-left: 0.3rem;
+}
+.infoIcon:hover {
+  opacity: 1;
+}
+.resultsPlaceholder {
+  color: #666;
+  font-style: italic;
+  font-size: 0.8rem;
+}
+.candidatesSection {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.candidatesSection h3 {
+  font-size: 0.8rem;
+  color: #bbb;
+  margin-bottom: 0.25rem;
+}
