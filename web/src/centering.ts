@@ -18,19 +18,6 @@ export function centroidTranslate(centroid: Vec3): Vec3 {
 }
 
 /**
- * Y-axis lift needed to rest the lowest point of a centroid-centered,
- * already-rotated mesh on the build plate at y=0. Apply to
- * `modelGroup.position.y`. Never sinks a model that already floats.
- *
- * X and Z are left at 0: because the mesh rotates around its centroid (now the
- * local origin) and modelGroup sits at the world origin, the rotated centroid
- * stays at (0, _, 0) — horizontally centered for every candidate.
- */
-export function liftOntoPlate(rotatedMinY: number): number {
-  return rotatedMinY < 0 ? -rotatedMinY : 0;
-}
-
-/**
  * Max distance from `centroid` to any vertex in `positions`. The result is
  * the bounding-sphere radius of the mesh around its centroid.
  * O(n) — iterates once, compares squared distances, one sqrt at the end.

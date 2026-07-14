@@ -1,4 +1,4 @@
-import type { OriData, ComputeConfig, Candidate } from './compute';
+import type { OriData, ComputeConfig, Candidate } from './types';
 
 let wasmReady: Promise<any> | null = null;
 

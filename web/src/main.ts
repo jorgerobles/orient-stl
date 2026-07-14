@@ -4,12 +4,14 @@ import { exportSTL } from './exportSTL';
 import { rotatePositions } from './rotate';
 import { applyConvention } from './convention';
 import type { LoadConvention } from './convention';
-import { decimateForScore, WEIGHT_PRESETS } from './compute';
-import type { OriData, Candidate, ComputeConfig } from './compute';
-import { score_orientation, compute_norm_bounds as wasm_compute_norm_bounds } from '../pkg/orient_core.js';
+import { decimateForScore } from './compute';
+import { WEIGHT_PRESETS } from './profiles';
+import type { OriData, Candidate, ComputeConfig } from './types';
 import { defaultConfig } from './types';
+import { score_orientation, compute_norm_bounds as wasm_compute_norm_bounds } from '../pkg/orient_core.js';
 import { dirFromQuat } from './quaternion';
 import { nearestCandidateScore } from './nearestScore';
+import { DECIMATE_TARGET, STORAGE_KEY, SCHEMA_VERSION, MIN_ANGLE_DEG, DEFAULT_REFINE_SEED, DEFAULT_PROFILE, DEFAULT_RANKER } from './constants';
 
 let config = defaultConfig();
 let candidates: Candidate[] = [];
@@ -90,7 +92,7 @@ function updateLiveScore(q: [number, number, number, number]): void {
   const { positions: lp, normals: ln, areas: la } = liveData;
   let raw: Float32Array;
   try {
-    raw = score_orientation(lp, ln, la, dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, 42);
+    raw = score_orientation(lp, ln, la, dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, DEFAULT_REFINE_SEED);
   } catch {
     raw = new Float32Array(8);
   }
@@ -110,7 +112,7 @@ function updateLiveScore(q: [number, number, number, number]): void {
 
   // Overall score: use nearest precomputed candidate's compositeScore,
   // or weighted average of normalized costs as fallback.
-  const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  const w = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS[DEFAULT_PROFILE];
   const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight];
   let score: number;
   if (candidates.length > 0) {
@@ -195,7 +197,7 @@ async function handleFile(file: File): Promise<void> {
     await paint();
 
     // Enable drag-to-rotate with live scoring (always on, no overlay).
-    const decimated = decimateForScore(fullData, 12000);
+    const decimated = decimateForScore(fullData, DECIMATE_TARGET);
     liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
     computeNormBounds(fullData);
     viewport.enterOverlayMode(updateLiveScore);
@@ -218,16 +220,14 @@ async function handleFile(file: File): Promise<void> {
   }
 }
 
-let currentProfile: string = 'resin-biased';
-let currentRanker: string = 'consensus';
+let currentProfile: string = DEFAULT_PROFILE;
+let currentRanker: string = DEFAULT_RANKER;
 let isComputeDirty = false;
 let lastOriData: OriData | null = null;
 let liveData: { positions: Float32Array; normals: Float32Array; areas: Float32Array } | null = null;
 
 const recalcBtn = document.getElementById('recalc-btn') as HTMLButtonElement;
 
-const STORAGE_KEY = 'orient-stl-config';
-const SCHEMA_VERSION = 1;
 interface StoredConfig {
   version: number; profile: string; ranker: string;
   criticalAngleDeg: number; convention: string; hullSphere: boolean;
@@ -249,8 +249,8 @@ function loadConfig(): void {
     if (!raw) return;
     const data = JSON.parse(raw) as StoredConfig;
     if (data.version !== SCHEMA_VERSION) { localStorage.removeItem(STORAGE_KEY); return; }
-    currentProfile = data.profile ?? 'resin-biased';
-    currentRanker = data.ranker ?? 'consensus';
+    currentProfile = data.profile ?? DEFAULT_PROFILE;
+    currentRanker = data.ranker ?? DEFAULT_RANKER;
     config.criticalAngleDeg = data.criticalAngleDeg ?? 30;
     loadConvention = data.convention as LoadConvention ?? 'z-up';
     hullSphereToggle.checked = data.hullSphere ?? false;
@@ -287,10 +287,10 @@ async function spawnCompute(data: OriData): Promise<void> {
   };
 
   await paint();
-  const decimated = decimateForScore(data, 12000);
+  const decimated = decimateForScore(data, DECIMATE_TARGET);
   liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
   progressLabel.textContent = 'Computing candidates...';
-  const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS['resin-biased'];
+  const weights = WEIGHT_PRESETS[currentProfile] ?? WEIGHT_PRESETS[DEFAULT_PROFILE];
   const wArr: [number, number, number, number, number] = [weights.wOverhang, weights.wFootprint, weights.wCross, weights.wSurface, weights.wHeight];
 
   const worker = new Worker(new URL('./orient.worker.ts', import.meta.url), { type: 'module' });
@@ -340,7 +340,7 @@ async function spawnCompute(data: OriData): Promise<void> {
     console.error('Worker error:', err);
     finishCompute();
   };
-  worker.postMessage({ data: decimated, config: computeConfig, weights: wArr, ranker: currentRanker, maxCandidates: computeConfig.maxCandidates, minAngleDeg: 15 });
+  worker.postMessage({ data: decimated, config: computeConfig, weights: wArr, ranker: currentRanker, maxCandidates: computeConfig.maxCandidates, minAngleDeg: MIN_ANGLE_DEG });
 }
 
 function finishCompute(): void {
@@ -453,7 +453,7 @@ recalcBtn.addEventListener('click', async () => {
   const data = parseCurrentData();
   if (!data) { statusEl.textContent = 'No data to recalculate'; progressContainer.style.display = 'none'; return; }
   positions = data.positions; faceNormals = data.normals; areas = data.areas; lastOriData = data;
-  const decimated = decimateForScore(data, 12000);
+  const decimated = decimateForScore(data, DECIMATE_TARGET);
   liveData = { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas };
   viewport.setCriticalAngle(config.criticalAngleDeg);
   computeNormBounds(data);
