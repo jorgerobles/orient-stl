@@ -29,6 +29,14 @@ Generate a reliable orientation ranking that minimizes supports and maximizes pr
 - [x] S² hill-climbing refinement (v2)
 - [x] All metrics & ranking in Rust (no TS duplication)
 - [x] CLI binary for headless verification
+- [x] main.ts split into modular controller + view classes (Phase 6)
+- [x] AppState store replaces 18 module-level let variables (Phase 6)
+- [x] Viewport decomposed: GizmoController, DragHandler, CameraRig (Phase 6)
+- [x] CSS extracted from inline `<style>` to styles/ directory + per-component CSS modules (Phase 6)
+- [x] Keyboard accessibility for 3D viewport (Phase 6)
+- [x] Semantic HTML landmarks + ARIA attributes (Phase 6)
+- [x] Typed WorkerMessage discriminated union (Phase 6)
+- [x] Dead exports removed, empty catch blocks given explicit recovery (Phase 6)
 
 ### Out of Scope
 
@@ -70,6 +78,9 @@ This tool addresses a gap in the resin printing workflow: existing slicers (Prus
 | Binary stability reject in v1 | Cheap geometric predicate (~40 lines), prevents ranking recommending unstable orientations | — Pending |
 | Yaw control via circular dial + snap | Rotating calipers reused from bbox computation; snap from hull edge aligns | — Pending |
 | Coarse granularity (4 phases) | Aligns with spec's existing v1/v2/v3 roadmap | — Pending |
+| AppState EventTarget-based store (no Redux/MobX) | Minimal dependency, zero-weight DI, sufficient for single-viewport app | ✓ Good (Phase 6) |
+| Viewport decomposed by pointer/rendering concern | GizmoController owns rings, DragHandler owns pointer math, CameraRig owns camera position — follows Single Responsibility | ✓ Good (Phase 6) |
+| CSS modules per component | Avoids class name collision without a preprocessor; Vite-native | ✓ Good (Phase 6) |
 
 ## Evolution
 
@@ -89,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-11 — GSD state reconciled with codebase after Phase 1 completion and Phase 2 implementation drift*
+*Last updated: 2026-07-14 — Phase 6 complete: frontend architecture refactored into modular, testable, accessible application*
