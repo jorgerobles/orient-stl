@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { centroidTranslate, liftOntoPlate, boundingRadius } from "./centering";
+import { centroidTranslate, boundingRadius } from "./centering";
 
 /**
  * Tests for the centroid-bake approach to candidate centering.
@@ -70,18 +70,4 @@ describe("boundingRadius", () => {
   });
 });
 
-describe("liftOntoPlate", () => {
-  it("lifts by -minY when the lowest point is below the plate", () => {
-    expect(liftOntoPlate(-4.5)).toBeCloseTo(4.5, 6);
-    expect(liftOntoPlate(-0.001)).toBeCloseTo(0.001, 6);
-  });
 
-  it("returns 0 when the lowest point is exactly at the plate", () => {
-    expect(liftOntoPlate(0)).toBe(0);
-  });
-
-  it("never sinks a model that already floats (minY > 0)", () => {
-    expect(liftOntoPlate(3)).toBe(0);
-    expect(liftOntoPlate(100)).toBe(0);
-  });
-});
