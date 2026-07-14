@@ -69,4 +69,8 @@ export class ConfigPanel {
   setConvention(v: LoadConvention): void { this.conventionSelect.value = v; }
   getHullSphere(): boolean { return this.hullSphereToggle.checked; }
   setHullSphere(v: boolean): void { this.hullSphereToggle.checked = v; }
+
+  enableFind(v: boolean): void { this.findBtn.disabled = !v; }
+  enableExport(v: boolean): void { this.exportBtn.disabled = !v; }
+  enableRecalc(v: boolean): void { this.recalcBtn.disabled = !v; }
 }
