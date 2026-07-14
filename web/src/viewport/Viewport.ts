@@ -293,11 +293,15 @@ export class Viewport {
     if (!this.mesh) return;
     this.overlayActive = true;
     this.onOrientationChange = onChange;
+    this.dragHandler?.attachKeyboardHandler(
+      this.renderer.domElement.parentElement!,
+    );
   }
 
   exitOverlayMode(): void {
     this.overlayActive = false;
     this.onOrientationChange = null;
+    this.dragHandler?.removeKeyboardHandler();
   }
 
   getMeshQuaternion(): [number, number, number, number] {

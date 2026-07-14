@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { GizmoController, RingAxis } from "./GizmoController";
+import { STEP_DEG, FINE_DEG } from "../constants";
 
 export class DragHandler {
   private dragMode: RingAxis | null = null;
@@ -9,10 +10,12 @@ export class DragHandler {
   private prevIntersect: THREE.Vector3 | null = null;
   private cumulativeAngle = 0;
   private raycaster = new THREE.Raycaster();
+  private keyboardEl: HTMLElement | null = null;
 
   private boundOnDown = (e: PointerEvent) => this.onDown(e);
   private boundOnMove = (e: PointerEvent) => this.onMove(e);
   private boundOnUp = (e: PointerEvent) => this.onUp(e);
+  private boundOnKeyDown = (e: KeyboardEvent) => this.onKeyDown(e);
 
   constructor(
     private gizmo: GizmoController,
@@ -194,7 +197,75 @@ export class DragHandler {
     this.controls.enabled = true;
   }
 
+  // ─── Keyboard rotation ──────────────────────────────
+
+  attachKeyboardHandler(el: HTMLElement): void {
+    this.keyboardEl = el;
+    el.addEventListener("keydown", this.boundOnKeyDown);
+  }
+
+  removeKeyboardHandler(): void {
+    if (this.keyboardEl) {
+      this.keyboardEl.removeEventListener("keydown", this.boundOnKeyDown);
+      this.keyboardEl = null;
+    }
+  }
+
+  private applyKeyRotation(axis: RingAxis, angleDeg: number): void {
+    const mv = this.getAxisVector(axis);
+    const axisVec = new THREE.Vector3(mv[0], mv[1], mv[2]);
+    const rotQ = new THREE.Quaternion().setFromAxisAngle(
+      axisVec,
+      (angleDeg * Math.PI) / 180,
+    );
+    this.mesh.quaternion.premultiply(rotQ);
+
+    const q = this.mesh.quaternion;
+    this.onOrientationChange([q.x, q.y, q.z, q.w]);
+  }
+
+  private onKeyDown(e: KeyboardEvent): void {
+    let axis: RingAxis | null = null;
+    let direction = 1;
+
+    switch (e.key) {
+      case "ArrowLeft":
+        axis = "axis-y";
+        direction = -1;
+        break;
+      case "ArrowRight":
+        axis = "axis-y";
+        direction = 1;
+        break;
+      case "ArrowUp":
+        axis = "axis-x";
+        direction = -1;
+        break;
+      case "ArrowDown":
+        axis = "axis-x";
+        direction = 1;
+        break;
+      case "q":
+      case "Q":
+        axis = "axis-z";
+        direction = -1;
+        break;
+      case "e":
+      case "E":
+        axis = "axis-z";
+        direction = 1;
+        break;
+      default:
+        return;
+    }
+
+    e.preventDefault();
+    const step = e.shiftKey ? FINE_DEG : STEP_DEG;
+    this.applyKeyRotation(axis, direction * step);
+  }
+
   dispose(): void {
+    this.removeKeyboardHandler();
     this.domElement.removeEventListener(
       "pointerdown",
       this.boundOnDown,

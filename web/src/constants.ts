@@ -30,3 +30,7 @@ export const RING_SCALE = 1.3;
 export const CAMERA_RING_SCALE = 1.6;
 export const TUBE_MIN_RATIO = 0.006;
 export const ANGLE_EPSILON = 0.0001;
+
+// ─── Keyboard rotation ───
+export const STEP_DEG = 5;
+export const FINE_DEG = 1;
