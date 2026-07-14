@@ -165,7 +165,7 @@ Plans:
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
 | 5. Consolidate All Calculations in Rust | 4/4 | ✅ Complete | 2026-07-13 |
 | 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
-| 6. Frontend Architecture Refactor | 2/4 | In Progress|  |
+| 6. Frontend Architecture Refactor | 3/4 | In Progress|  |
 
 **Phase 2 detail (final):**
 
@@ -195,11 +195,11 @@ Plans:
   11. Zero unused exports (e.g., `liftOntoPlate`)
   12. All empty catch blocks either removed or given explicit recovery
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 
 - [x] 06-01-PLAN.md — Foundation: consolidate types.ts, create constants.ts, remove dead exports (liftOntoPlate/SliceResult/RefineFn), extract inline CSS to styles/
 - [x] 06-02-PLAN.md — AppState store (EventTarget) + Viewport decomposition (GizmoController, DragHandler, CameraRig) with Pitfall 3 axis-mapping regression test
-- [ ] 06-03-PLAN.md — Split main.ts into AppController + view classes (ScorePanel, ConfigPanel, CandidateList, FileDrop) + typed worker messages (atomic)
+- [x] 06-03-PLAN.md — Split main.ts into AppController + view classes (ScorePanel, ConfigPanel, CandidateList, FileDrop) + typed worker messages (atomic)
 - [ ] 06-04-PLAN.md — Accessibility (keyboard rotation, ARIA, semantic HTML) + empty catch cleanup + final 12-criterion verification
