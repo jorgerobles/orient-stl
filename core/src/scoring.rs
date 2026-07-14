@@ -204,12 +204,13 @@ pub fn score_components(
     critical_angle_deg: f32,
     cross_bins: usize,
 ) -> ScoreComponents {
+    let overhang = score_candidate(direction, mesh, critical_angle_deg);
     ScoreComponents {
-        overhang: score_candidate(direction, mesh, critical_angle_deg),
+        overhang,
         footprint: footprint_area(direction, mesh),
         max_cross: max_cross_section(direction, mesh, cross_bins),
         surface_quality: misalignment_score(direction, mesh),
-        height: min_z_height(direction, mesh),
+        height: overhang * min_z_height(direction, mesh),
     }
 }
 

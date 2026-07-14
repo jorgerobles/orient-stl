@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: complete
-stopped_at: Phase 6 complete — all phases delivered
-last_updated: "2026-07-14T12:00:00.000Z"
-last_activity: 2026-07-14 -- Phase 6 complete — Frontend Architecture Refactor
+status: in_progress
+stopped_at: Phase 7 started — correctness fixes + H11 scoring
+last_updated: "2026-07-14T22:45:00.000Z"
+last_activity: 2026-07-14 -- Phase 7 planned (correctness fixes + H11 scoring)
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 6
-  total_plans: 18
+  total_plans: 22
   completed_plans: 17
-  percent: 100
+  percent: 77
 ---
 
 # Project State
@@ -21,14 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** All phases complete
+**Current focus:** Phase 7 — correctness fixes (refine perturbation, center of mass, dead code) + wire H11 shadowed-overhang into the composite score
 
 ## Current Position
 
-Phase: 06 — Complete
-Plan: 4/4 (all done)
-Status: Complete
+Phase: 07 — Correctness Fixes + H11 Scoring (in progress)
+Plan: 0/4 (planned, not started)
+Status: In Progress
 Last activity: 2026-07-14
+
+### Phase 7 status
+
+| Plan | Status | Notes |
+|------|--------|-------|
+| 07-01 Tangent perturbation fix | ⏳ Planned | refine_once perp not perpendicular (dot=dir[0]·dir[2]·(u2-u1)); reuse perpendicular_basis |
+| 07-02 Area-weighted COM + hull param | ⏳ Planned | stability.rs vertex centroid → area-weighted; remove unused hull param |
+| 07-03 Delete dead yaw subgraph | ⏳ Planned | candidates.rs compute_default_yaw + 7-dependents chain (already #[deprecated]) |
+| 07-04 Wire H11 into composite score | ⏳ Planned | shadowed displayed but not scored; breaks WASM API (weights 5→6, bounds 10→12, score_direction 8→9) |
+
+### Next step
+
+Execute 07-01 (RED test for tangent_perturbation perpendicularity), then 07-02/07-03 in parallel, then 07-04 (serialized — crosses WASM boundary).
 
 ### Phase 6 status (final)
 
@@ -38,10 +51,6 @@ Last activity: 2026-07-14
 | 05-02 WASM exports + CLI | ✅ Complete | score_all_directions, rank_candidates, select_diverse, compute_norm_bounds; CLI binary; drop self-referential tests |
 | 05-03 TS thin layer | ✅ Complete | compute.ts stripped, compute.test.ts deleted, single-worker dispatcher, main.ts updated |
 | 05-04 Cross-verification | ✅ Complete | 12 CLI ref outputs, float-layout verification, single Rust source guarantees parity |
-
-### Next step
-
-All phases complete — milestone v1.0 delivered
 
 ## Performance Metrics
 

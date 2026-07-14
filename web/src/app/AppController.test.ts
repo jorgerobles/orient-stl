@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AppController } from "./AppController";
+import { AppController, bboxDiagonalFromPositions } from "./AppController";
 import type { AppControllerDeps } from "./AppController";
 import { AppState } from "./AppState";
 import type { AppStateData } from "./AppState";
@@ -18,6 +18,7 @@ function createInitialState(): AppStateData {
     lastOriData: null,
     liveData: null,
     normBounds: null,
+    bboxDiagonal: 50,
     loadConvention: "z-up",
   };
 }
@@ -155,6 +156,29 @@ describe("AppController", () => {
     ];
     deps.state.set("candidates", cands);
     expect(deps.candidateList.render).toHaveBeenCalledWith(cands, 0);
+  });
+
+  it("bboxDiagonalFromPositions computes sqrt(dx^2 + dy^2 + dz^2)", () => {
+    const pos = new Float32Array([
+      0, 0, 0,
+      3, 0, 0,
+      0, 4, 0,
+      0, 0, 5,
+    ]);
+    const diag = bboxDiagonalFromPositions(pos);
+    const expected = Math.sqrt(3 * 3 + 4 * 4 + 5 * 5);
+    expect(diag).toBeCloseTo(expected, 6);
+  });
+
+  it("bboxDiagonalFromPositions returns 0 for single vertex", () => {
+    const pos = new Float32Array([1, 2, 3]);
+    expect(bboxDiagonalFromPositions(pos)).toBe(0);
+  });
+
+  it("bboxDiagonalFromPositions handles negative coordinates", () => {
+    const pos = new Float32Array([-1, -1, -1, 1, 1, 1]);
+    const diag = bboxDiagonalFromPositions(pos);
+    expect(diag).toBeCloseTo(Math.sqrt(2 * 2 + 2 * 2 + 2 * 2), 6);
   });
 
   it("showCandidate calls viewport.showCandidate and scorePanel.update", () => {

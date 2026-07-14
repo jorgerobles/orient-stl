@@ -22,6 +22,7 @@ function boot(): void {
     lastOriData: null,
     liveData: null,
     normBounds: null,
+    bboxDiagonal: 0,
     loadConvention: 'z-up',
   });
 

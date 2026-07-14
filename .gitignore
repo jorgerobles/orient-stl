@@ -2,3 +2,5 @@
 /web/pkg/
 /web/dist/
 /web/node_modules/
+
+.codegraph/

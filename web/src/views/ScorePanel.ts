@@ -9,13 +9,13 @@ export interface ScorePanelData {
   hint: string;
 }
 
-const METRIC_NAMES = ['Overhang', 'Footprint', 'Cross-sect', 'Surface', 'Height'];
+const METRIC_NAMES = ['Overhang', 'Footprint', 'Cross-sect', 'Surface', 'Height Risk'];
 const METRIC_DESCS = [
   'Faces needing supports (lower=better)',
   'Base contact area (lower=better)',
   'Max layer material — peel force (lower=better)',
   'Axis misalignment — resin finish (higher=better)',
-  'Print height — layers & time (lower=better)',
+  'Height × overhang risk (lower=better)',
 ];
 
 function qColor(q: number): string {

@@ -83,18 +83,21 @@ describe("DragHandler", () => {
       mocks.onOrientationChange,
     );
 
+    const addListener = vi.mocked(mocks.domElement.addEventListener);
+    const removeListener = vi.mocked(mocks.domElement.removeEventListener);
+
     // Constructor should have added 3 listeners
-    expect(mocks.domElement.addEventListener).toHaveBeenCalledTimes(3);
+    expect(addListener).toHaveBeenCalledTimes(3);
 
     handler.dispose();
 
     // dispose should remove all 3 listeners
-    expect(mocks.domElement.removeEventListener).toHaveBeenCalledTimes(3);
+    expect(removeListener).toHaveBeenCalledTimes(3);
     // Verify event types match
-    const addedEvents = mocks.domElement.addEventListener.mock.calls.map(
+    const addedEvents = addListener.mock.calls.map(
       (c: unknown[]) => c[0],
     );
-    const removedEvents = mocks.domElement.removeEventListener.mock.calls.map(
+    const removedEvents = removeListener.mock.calls.map(
       (c: unknown[]) => c[0],
     );
     expect(removedEvents).toEqual(addedEvents);
