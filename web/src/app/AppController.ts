@@ -49,6 +49,7 @@ export class AppController {
   private lastFile: File | null = null;
   private lastFileBytes: Uint8Array | null = null;
   private currentWorker: Worker | null = null;
+  private liveRegionEl: HTMLElement | null = document.getElementById("status-live");
 
   constructor(private deps: AppControllerDeps) {
     deps.fileDrop.onFile((f) => this.handleFile(f));
@@ -239,6 +240,12 @@ export class AppController {
       rankerLabel: RANKER_LABELS[ranker] ?? ranker,
       hint: RANKER_HINTS[ranker] ?? '',
     });
+
+    const profileLabel = PROFILE_LABELS[profile] ?? profile;
+    const pct = (score * 100).toFixed(0);
+    if (this.liveRegionEl) {
+      this.liveRegionEl.textContent = `Orientation score ${pct}%, Profile: ${profileLabel}`;
+    }
   }
 
   private async spawnCompute(data: OriData): Promise<void> {

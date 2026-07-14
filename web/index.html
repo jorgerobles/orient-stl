@@ -7,12 +7,17 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
 </head>
 <body>
-  <div id="viewport"></div>
+  <main>
+    <section id="viewport" role="application" aria-label="3D model viewport — drag rings to rotate, or use arrow keys" tabindex="0"></section>
+    <aside id="status-live" aria-live="polite" class="sr-only"></aside>
+  </main>
 
   <!-- Left panel: file + config -->
-  <div class="panel panel-left" id="panel-left">
-    <h1>Orient STL</h1>
-    <p class="subtitle">Resin printing orientation tool</p>
+  <aside class="panel panel-left" id="panel-left" aria-label="File and configuration">
+    <header>
+      <h1>Orient STL</h1>
+      <p class="subtitle">Resin printing orientation tool</p>
+    </header>
 
     <div id="status" class="status">Initializing...</div>
 
@@ -77,10 +82,10 @@
         <button id="cancel-btn" class="button button-sm button-danger">Cancel</button>
       </div>
     </div>
-  </div>
+  </aside>
 
   <!-- Right panel: score breakdown + candidates -->
-  <div class="panel panel-right" id="results">
+  <aside class="panel panel-right" id="results" aria-label="Score and candidates">
     <div id="score-section">
       <div class="score-top">
         <span class="score-big" id="score-big">—</span>
@@ -98,7 +103,7 @@
       <ol id="candidate-list"></ol>
     </div>
     <p class="results-placeholder" id="results-placeholder">Load an STL to see scores.</p>
-  </div>
+  </aside>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

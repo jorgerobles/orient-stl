@@ -24,6 +24,11 @@ body {
   touch-action: none;
   transition: filter 0.3s;
   cursor: grab;
+  outline: none;
+}
+#viewport:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
 }
 #viewport:active {
   cursor: grabbing;
