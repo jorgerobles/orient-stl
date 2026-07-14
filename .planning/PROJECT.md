@@ -14,22 +14,21 @@ Generate a reliable orientation ranking that minimizes supports and maximizes pr
 
 (None yet — ship to validate)
 
-### Active
+### Validated
 
-- [ ] STL file loading & parsing (binary STL, via stl-io in Rust WASM)
-- [ ] Overhang penalty scoring (area-weighted, S² space)
-- [ ] Candidate generation from convex hull normals (hull mode)
-- [ ] Binary stability reject (CoM projection inside contact footprint)
-- [ ] Ranked results display with next/prev navigation
-- [ ] Yaw adjustment with circular dial + snap-to-geometry
-- [ ] WASM core computation (Rust → wasm-bindgen)
-- [ ] three.js single viewport for orientation preview
-- [ ] Height-weighted scoring (v2)
-- [ ] hull_plus_sphere candidate sampling (v2)
-- [ ] S² hill-climbing refinement (v2)
-- [ ] Offscreen thumbnail generation for each candidate (v3)
-- [ ] IndexedDB persistence for favorites (v3)
-- [ ] Multi-STL export via fflate ZIP (v3)
+- [x] STL file loading & parsing (binary STL, via stl-io in Rust WASM)
+- [x] Overhang penalty scoring (area-weighted, S² space)
+- [x] Candidate generation from convex hull normals (hull mode)
+- [x] Binary stability reject (CoM projection inside contact footprint)
+- [x] Ranked results display with next/prev navigation
+- [x] Yaw adjustment with slider + snap-to-geometry
+- [x] WASM core computation (Rust → wasm-bindgen)
+- [x] three.js single viewport for orientation preview
+- [x] Height-weighted scoring (v2)
+- [x] hull_plus_sphere candidate sampling (v2)
+- [x] S² hill-climbing refinement (v2)
+- [x] All metrics & ranking in Rust (no TS duplication)
+- [x] CLI binary for headless verification
 
 ### Out of Scope
 
@@ -37,6 +36,9 @@ Generate a reliable orientation ranking that minimizes supports and maximizes pr
 - Network/multiplayer features — local tool only
 - Native desktop app — browser-first with WASM core
 - ASCII STL support — deferred unless needed (binary covers all common cases)
+- Thumbnail strip (OffscreenCanvas rendering) — YAGNI, single-candidate viewport sufficient
+- Favorites/IndexedDB persistence — YAGNI, single-session workflow covers use case
+- Multi-STL ZIP export — YAGNI, single-file export covers essential workflow
 
 ## Context
 

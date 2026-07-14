@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 5 complete — all calculations consolidated in Rust
-last_updated: "2026-07-13T20:53:46.764Z"
-last_activity: 2026-07-13 -- Phase 05 marked complete
+status: active
+stopped_at: Phase 6 added — Frontend Architecture Refactor
+last_updated: "2026-07-14T12:00:00.000Z"
+last_activity: 2026-07-14 -- Phase 6 added to roadmap
 progress:
-  total_phases: 6
-  completed_phases: 5
+  total_phases: 7
+  completed_phases: 6
   total_plans: 14
   completed_plans: 14
-  percent: 83
+  percent: 85
 ---
 
 # Project State
@@ -21,16 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 05 — rust-consolidation
+**Current focus:** Phase 6 — Frontend Architecture Refactor
 
 ## Current Position
 
-Phase: 05 — ✅ Complete
-Plan: 4 of 4
-Status: Phase 5 complete — all calculations consolidated in Rust
-Last activity: 2026-07-13 -- Phase 5 verified, all 8 success criteria met
-
-Progress: [████████████████████████████] 100%
+Phase: 06 — Frontend Architecture Refactor
+Plan: 0 of 0
+Status: Not planned yet
+Last activity: 2026-07-14 -- Phase 6 added to roadmap
 
 ### Phase 5 status (final)
 
@@ -43,7 +41,7 @@ Progress: [███████████████████████
 
 ### Next step
 
-Phase 4 — v3 UX Polish (Thumbnail Strip, Favorites, ZIP Export)
+Plan Phase 6 — Frontend Architecture Refactor
 
 ## Performance Metrics
 
@@ -60,10 +58,15 @@ Phase 4 — v3 UX Polish (Thumbnail Strip, Favorites, ZIP Export)
 | 1. Rust WASM Core Engine + Build Toolchain | 3/3 ✅ | — | — |
 | 2. Viewport + Yaw + Export | 3/3 ✅ | — | — |
 | 3. v2 Enhancements | 2/2 ✅ | — | — |
-| 4. v3 UX Polish | 0/3 | — | — |
+| 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
+| 6. Frontend Architecture Refactor | 0/0 | Not planned | - |
 | 3.5 Scoring Expansion & Refinement | 2/2 ✅ | 32 min | 3 tasks + backfill |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 6 added: Frontend Architecture Refactor — split god module, state management, Viewport modularization, CSS extraction, accessibility
 
 ### Decisions
 
@@ -117,14 +120,15 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-13T21:55:00.000Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-07-14T12:00:00.000Z
+Stopped at: Phase 6 added to roadmap — Frontend Architecture Refactor
 Resume file: None
 
 ### Infrastructure State
 
-- Vite dev server: running at http://localhost:5173/
+- Vite dev server: stopped
 - WASM binary: `web/pkg/orient_core_bg.wasm` (195KB — all metrics + ranking + selection)
-- TypeScript: `npx tsc --noEmit` passes
+- TypeScript: `npx tsc --noEmit` passes (38 tests)
 - Build: `npm run build` succeeds
+- Rust: `cargo test` passes (78 unit + 1 integration)
 - TS metric/ranking/selection functions: **0 remaining** (all migrated to Rust WASM)
