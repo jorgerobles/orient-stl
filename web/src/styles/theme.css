@@ -1,0 +1,20 @@
+/* ─── Theme: CSS custom properties for orient-stl ─── */
+
+:root {
+  --color-accent: #4a90d9;
+  --color-accent-hover: #357abd;
+  --color-bg: #1a1a1a;
+  --color-viewport-bg: #2a2a2a;
+  --color-panel-bg: rgba(18, 18, 18, 0.92);
+  --color-text: #eee;
+  --color-text-dim: #888;
+  --color-text-mid: #aaa;
+  --color-success: #27ae60;
+  --color-danger: #e74c3c;
+  --color-warning: #f0ad4e;
+  --color-info: #8cbef0;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font-size-base: 0.85rem;
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.08);
+}
