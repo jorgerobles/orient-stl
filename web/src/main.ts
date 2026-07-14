@@ -12,6 +12,8 @@ import { score_orientation, compute_norm_bounds as wasm_compute_norm_bounds } fr
 import { dirFromQuat } from './quaternion';
 import { nearestCandidateScore } from './nearestScore';
 import { DECIMATE_TARGET, STORAGE_KEY, SCHEMA_VERSION, MIN_ANGLE_DEG, DEFAULT_REFINE_SEED, DEFAULT_PROFILE, DEFAULT_RANKER } from './constants';
+import './styles/theme.css';
+import './styles/main.css';
 
 let config = defaultConfig();
 let candidates: Candidate[] = [];
