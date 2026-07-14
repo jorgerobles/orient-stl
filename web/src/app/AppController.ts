@@ -49,7 +49,14 @@ export class AppController {
   private lastFile: File | null = null;
   private lastFileBytes: Uint8Array | null = null;
   private currentWorker: Worker | null = null;
-  private liveRegionEl: HTMLElement | null = document.getElementById("status-live");
+  private _liveRegionEl: HTMLElement | null = null;
+
+  private get liveRegionEl(): HTMLElement | null {
+    if (!this._liveRegionEl) {
+      this._liveRegionEl = document.getElementById("status-live");
+    }
+    return this._liveRegionEl;
+  }
 
   constructor(private deps: AppControllerDeps) {
     deps.fileDrop.onFile((f) => this.handleFile(f));
@@ -190,7 +197,10 @@ export class AppController {
         data.directions, this.deps.state.get('config').criticalAngleDeg,
       ) as Float32Array;
       this.deps.state.set('normBounds', { lo: Array.from(raw.subarray(0, 5)), hi: Array.from(raw.subarray(5, 10)) });
-    } catch { /* keep existing normBounds if sample fails */ }
+    } catch (err) {
+      this.deps.state.set('normBounds', null);
+      console.warn('computeNormBounds failed, scoring will be degraded', err);
+    }
   }
 
   private updateLiveScore(q: [number, number, number, number]): void {
@@ -204,8 +214,9 @@ export class AppController {
     try {
       raw = score_orientation(liveData.positions, liveData.normals, liveData.areas,
         dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0, DEFAULT_REFINE_SEED);
-    } catch {
+    } catch (err) {
       raw = new Float32Array(8);
+      console.warn('score_orientation failed, using fallback', err);
     }
     const [, , , overhang, foot, cross, surf, height] = raw;
 
@@ -397,7 +408,10 @@ export class AppController {
       convention: this.deps.state.get('loadConvention'),
       hullSphere: this.deps.configPanel.getHullSphere(),
     };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* quota */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (err) {
+      this.deps.statusEl.textContent = 'Warning: Could not save preferences (storage full or private mode)';
+      console.warn('saveConfig failed', err);
+    }
   }
 
   private loadConfig(): void {
@@ -418,7 +432,10 @@ export class AppController {
       this.deps.configPanel.setProfile(data.profile ?? DEFAULT_PROFILE);
       this.deps.configPanel.setRanker(data.ranker ?? DEFAULT_RANKER);
       this.deps.viewport.setCriticalAngle(config.criticalAngleDeg);
-    } catch { /* corrupt \u2192 keep defaults */ }
+    } catch (err) {
+      localStorage.removeItem(STORAGE_KEY);
+      console.warn('Stored config corrupt, resetting to defaults', err);
+    }
   }
 
   private markDirty(): void {
