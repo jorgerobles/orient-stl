@@ -10,8 +10,9 @@ A browser-based resin printing orientation tool. Rust WASM parses STL files, com
 - [x] **Phase 2: Viewport + Yaw + Export (Complete UX Loop)** — three.js viewport with candidate navigation, yaw adjustment, single-file STL export
 - [x] **Phase 3: v2 Enhancements** — Height-weighted scoring, hull+sphere mode, hill-climbing refinement, multi-metric sorting, overhang heatmap (some items partially landed in Phase 1/2 drift)
 - [x] **Phase 3.5: Scoring Expansion & Refinement** — PrusaSlicer comparison surfaced 3 missing capabilities; all delivered (H5/H6 heuristics + profiles + seeded refine + TOPSIS + UI switcher)
-- [ ] **Phase 5: Consolidate All Calculations in Rust** — Move all metrics, rankings, selection, and yaw from TS to Rust. Single WASM call replaces worker-based computeSlice. Rust CLI binary for independent verification. TS becomes rendering-only. Ground-truth tests replace self-referential tests.
-- [ ] **Phase 4: v3 UX Polish** — Thumbnail strip, favorites persistence (IndexedDB), multi-STL ZIP export
+- [x] **Phase 5: Consolidate All Calculations in Rust** — Move all metrics, rankings, selection, and yaw from TS to Rust. Single WASM call replaces worker-based computeSlice. Rust CLI binary for independent verification. TS becomes rendering-only. Ground-truth tests replace self-referential tests.
+- [-] **Phase 4: v3 UX Polish** — Dropped (YAGNI — thumbnail strip, favorites, ZIP export not essential for core value proposition)
+- [ ] **Phase 6: Frontend Architecture Refactor** — Split god module, introduce state management, modularize Viewport, accessibility, CSS extraction, proper typing
 
 ## Phase Details
 
@@ -81,27 +82,24 @@ Plans:
 - [x] 03-01-PLAN.md — Rust WASM enhancements: Fibonacci sphere sampling, hull+sphere mode, hill-climb refine_orientation()
 - [x] 03-02-PLAN.md — Interactive overlay: height-weighted scoring, hull+sphere toggle, drag-to-rotate with live score badge, Varita Mágica button
 
-### Phase 4: v3 UX Polish
+### Phase 4: v3 UX Polish — Dropped
 
 **Goal**: Rich browsing experience with thumbnail strip, favorites persistence across sessions, and batch ZIP export
 **Mode**: mvp
 **Depends on**: Phase 3
 **Requirements**: THUMB-01, THUMB-02, THUMB-03, FAV-01, FAV-02, FAV-03, EXPORT-03, EXPORT-04
-**Success Criteria** (what must be TRUE):
+**Success Criteria** (what must be TRUE): N/A — phase dropped before implementation
 
-  1. Thumbnail strip shows all top-N candidates as PNG images with score badges; clicking a thumbnail jumps to that candidate
-  2. User can mark/unmark candidates as favorites with a visible toggle
-  3. Favorites persist across page reloads (IndexedDB stores quaternion + thumbnail blob + metrics)
-  4. User can export all favorite candidates as a single ZIP bundle; individual STLs named `model_orientNN_scoreX.stl`
-
-**Plans**: 3 plans
+**Plans**: 3 plans (all cancelled)
 **UI hint**: yes
+
+**Decision:** Dropped as YAGNI — core value (orientation ranking) is fully delivered. Thumbnails, favorites, and ZIP export are nice-to-haves that don't affect print success. Single-file export via exportSTL covers the essential workflow.
 
 Plans:
 
-- [ ] 04-01: Thumbnail Strip (OffscreenCanvas rendering, Web Worker, score badge overlay)
-- [ ] 04-02: Favorites (IndexedDB schema, CRUD operations, restore on reload)
-- [ ] 04-03: ZIP Export (fflate bundle assembly, named STL files, download trigger)
+- [-] 04-01: Thumbnail Strip — Cancelled (YAGNI)
+- [-] 04-02: Favorites — Cancelled (YAGNI)
+- [-] 04-03: ZIP Export — Cancelled (YAGNI)
 
 ### Phase 3.5: Scoring Expansion & Refinement
 
@@ -157,7 +155,7 @@ Plans:
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4
+**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -166,7 +164,8 @@ Plans:
 | 3. v2 Enhancements | 2/2 | ✅ Complete | - |
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
 | 5. Consolidate All Calculations in Rust | 4/4 | ✅ Complete | 2026-07-13 |
-| 4. v3 UX Polish | 0/3 | Not started | - |
+| 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
+| 6. Frontend Architecture Refactor | 0/0 | Not planned | - |
 
 **Phase 2 detail (final):**
 
@@ -175,3 +174,32 @@ Plans:
 - 02-03 Export: ✅ complete
 - Scoring: 4-metric consensus (overhang, footprint, cross-section, shadowed-overhang), yaw-optimized shadow (8-sample min), 100%→0% ranking
 - Progress bar: segmented (per-worker) with paint-yield between sync phases
+
+### Phase 6: Frontend Architecture Refactor
+
+**Goal**: Transform the TS/HTML frontend from a monolithic imperative codebase into a modular, testable, accessible application. Split `main.ts` into controller + view classes, introduce explicit state management, extract `Viewport` sub-modules (GizmoController, DragHandler), move CSS to modules, add keyboard/ARIA support, and enforce typed message passing.
+**Mode**: TDD (Red-Green-Refactor)
+**Depends on:** Phase 5
+**Success Criteria** (what must be TRUE):
+
+  1. `main.ts` is split into `AppController`, `ScorePanel`, `ConfigPanel`, `CandidateList` (or equivalent classes), each ≤ 100 lines
+  2. All mutable state lives in a single `AppState` object or store, not 14+ module-level `let` variables
+  3. `Viewport` is split: `GizmoController` (ring creation, billboard, raycasting), `DragHandler` (pointer capture, angle math), `CameraRig` (position, reset) extracted
+  4. `compute.ts` only contains `decimateForScore`; all types moved to `types.ts`
+  5. CSS extracted to `styles/` directory with modules per component; no inline `<style>` in `index.html`
+  6. Viewport rings are keyboard-accessible (arrow keys for rotation, tab navigation)
+  7. Semantic HTML landmarks (`<header>`, `<main>`, `<aside>`) with ARIA attributes
+  8. Worker messages typed via union type on the message envelope
+  9. All magic numbers replaced with named constants in a config object
+  10. `viewport.ts` and `main.ts` orchestration have unit test coverage
+  11. Zero unused exports (e.g., `liftOntoPlate`)
+  12. All empty catch blocks either removed or given explicit recovery
+
+**Plans:** 4 plans
+
+Plans:
+
+- [ ] 06-01-PLAN.md — Foundation: consolidate types.ts, create constants.ts, remove dead exports (liftOntoPlate/SliceResult/RefineFn), extract inline CSS to styles/
+- [ ] 06-02-PLAN.md — AppState store (EventTarget) + Viewport decomposition (GizmoController, DragHandler, CameraRig) with Pitfall 3 axis-mapping regression test
+- [ ] 06-03-PLAN.md — Split main.ts into AppController + view classes (ScorePanel, ConfigPanel, CandidateList, FileDrop) + typed worker messages (atomic)
+- [ ] 06-04-PLAN.md — Accessibility (keyboard rotation, ARIA, semantic HTML) + empty catch cleanup + final 12-criterion verification
