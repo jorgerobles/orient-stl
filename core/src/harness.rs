@@ -82,12 +82,12 @@ fn harness_run() {
 
         // Raw component ranges (for reference).
         println!("\n  raw component ranges (min..max across candidates):");
-        println!("    overhang:  {:.3} .. {:.3}", minOf(&overs), maxOf(&overs));
-        println!("    footprint: {:.3} .. {:.3}", minOf(&fps), maxOf(&fps));
-        println!("    maxcross:  {:.3} .. {:.3}", minOf(&crs), maxOf(&crs));
-        println!("    surface:   {:.3} .. {:.3}", minOf(&sfs), maxOf(&sfs));
-        println!("    height:    {:.3} .. {:.3}", minOf(&hts), maxOf(&hts));
-        println!("    shadowed:  {:.3} .. {:.3}", minOf(&shs), maxOf(&shs));
+        println!("    overhang:  {:.3} .. {:.3}", min_of(&overs), max_of(&overs));
+        println!("    footprint: {:.3} .. {:.3}", min_of(&fps), max_of(&fps));
+        println!("    maxcross:  {:.3} .. {:.3}", min_of(&crs), max_of(&crs));
+        println!("    surface:   {:.3} .. {:.3}", min_of(&sfs), max_of(&sfs));
+        println!("    height:    {:.3} .. {:.3}", min_of(&hts), max_of(&hts));
+        println!("    shadowed:  {:.3} .. {:.3}", min_of(&shs), max_of(&shs));
 
         // Build CandidateMetrics vector with real shadowed values.
         let metrics: Vec<CandidateMetrics> = (0..dirs.len())
@@ -137,5 +137,5 @@ fn harness_run() {
     }
 }
 
-fn minOf(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::INFINITY, f32::min) }
-fn maxOf(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::NEG_INFINITY, f32::max) }
+fn min_of(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::INFINITY, f32::min) }
+fn max_of(v: &[f32]) -> f32 { v.iter().cloned().fold(f32::NEG_INFINITY, f32::max) }
