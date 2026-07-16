@@ -38,3 +38,30 @@ export function applyConvention(
   }
   return out;
 }
+
+/**
+ * Reverse a previous applyConvention transform, converting from the tool's
+ * internal Y-up frame back to the original STL file's axis convention.
+ *
+ * This is used during STL export so the saved file opens correctly in a slicer
+ * that expects the same convention as the original file.
+ *
+ *   'z-up' inverse of (x, y, z) → (x, z, -y)  is  (x, -z, y)
+ *   'y-up' is a no-op (same as applyConvention)
+ *
+ * Returns a new array for 'z-up'; returns the SAME array for 'y-up'.
+ */
+export function inverseConvention(
+  coords: Float32Array,
+  convention: LoadConvention,
+): Float32Array {
+  if (convention === "y-up") return coords;
+
+  const out = new Float32Array(coords.length);
+  for (let i = 0; i < coords.length; i += 3) {
+    out[i] = coords[i];
+    out[i + 1] = -coords[i + 2];
+    out[i + 2] = coords[i + 1];
+  }
+  return out;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyConvention } from "./convention";
+import { applyConvention, inverseConvention } from "./convention";
 import type { LoadConvention } from "./convention";
 
 /**
@@ -125,5 +125,65 @@ describe("applyConvention", () => {
         expect(outLen).toBeCloseTo(inLen, 6);
       }
     }
+  });
+});
+
+// ─── inverseConvention ──────────────────────────────────────────────────────
+
+describe("inverseConvention", () => {
+  describe("'y-up' (already in tool frame — identity)", () => {
+    it("returns the input array unchanged", () => {
+      const coords = new Float32Array([1, 2, 3, 4, 5, 6]);
+      const out = inverseConvention(coords, "y-up");
+      expect(out).toBe(coords);
+      expect(Array.from(out)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+  });
+
+  describe("'z-up' — invert (x, z, -y) back to (x, y, z)", () => {
+    it("maps (x, y, z) → (x, -z, y) for every vertex", () => {
+      const coords = new Float32Array([1, 2, 3, -4, 5, -6, 0, 0, 0, 0.1, -0.2, 0.3]);
+      const out = inverseConvention(coords, "z-up");
+      const expected = [1, -3, 2, -4, 6, 5, 0, 0, 0, 0.1, -0.3, -0.2];
+      expect(out.length).toBe(expected.length);
+      for (let i = 0; i < expected.length; i++) {
+        expect(out[i]).toBeCloseTo(expected[i], 6);
+      }
+    });
+
+    it("round-trips with applyConvention", () => {
+      const original = new Float32Array([1, -2, 3, -4, 5, -6, 0.5, 1.5, -2.5]);
+      const applied = applyConvention(original, "z-up");
+      const restored = inverseConvention(applied, "z-up");
+      expect(restored.length).toBe(original.length);
+      for (let i = 0; i < original.length; i++) {
+        expect(restored[i]).toBeCloseTo(original[i], 6);
+      }
+    });
+
+    it("preserves vector lengths", () => {
+      const coords = new Float32Array([3, 4, 0, 1, 1, 1, -2, 5, 1]);
+      const out = inverseConvention(coords, "z-up");
+      expect(Math.hypot(out[0], out[1], out[2])).toBeCloseTo(5, 6);
+      expect(Math.hypot(out[3], out[4], out[5])).toBeCloseTo(Math.sqrt(3), 6);
+      expect(Math.hypot(out[6], out[7], out[8])).toBeCloseTo(Math.sqrt(30), 6);
+    });
+
+    it("does not mutate the input", () => {
+      const coords = new Float32Array([1, 2, 3, -4, 5, -6]);
+      const snap = Array.from(coords);
+      inverseConvention(coords, "z-up");
+      expect(Array.from(coords)).toEqual(snap);
+    });
+
+    it("returns a new array (not the input)", () => {
+      const coords = new Float32Array([1, 2, 3]);
+      const out = inverseConvention(coords, "z-up");
+      expect(out).not.toBe(coords);
+    });
+
+    it("handles empty arrays", () => {
+      expect(inverseConvention(new Float32Array(0), "z-up").length).toBe(0);
+    });
   });
 });

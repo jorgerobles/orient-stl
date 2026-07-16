@@ -8,7 +8,7 @@ import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest } 
 import { defaultConfig } from '../types';
 import { initWasm, loadSTLBytes, prepareData } from '../loadSTL';
 import { decimateForScore } from '../compute';
-import { applyConvention } from '../convention';
+import { applyConvention, inverseConvention } from '../convention';
 import type { LoadConvention } from '../convention';
 import { dirFromQuat } from '../quaternion';
 import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds } from '../../pkg/orient_core.js';
@@ -214,7 +214,7 @@ export class AppController {
         liveData.positions, liveData.normals, liveData.areas,
         data.directions, this.deps.state.get('config').criticalAngleDeg,
       ) as Float32Array;
-      this.deps.state.set('normBounds', { lo: Array.from(raw.subarray(0, 5)), hi: Array.from(raw.subarray(5, 10)) });
+      this.deps.state.set('normBounds', { lo: Array.from(raw.subarray(0, 6)), hi: Array.from(raw.subarray(6, 12)) });
     } catch (err) {
       this.deps.state.set('normBounds', null);
       console.warn('computeNormBounds failed, scoring will be degraded', err);
@@ -233,25 +233,26 @@ export class AppController {
       raw = score_direction(liveData.positions, liveData.normals, liveData.areas,
         dir[0], dir[1], dir[2], config.criticalAngleDeg, config.refineIterations ?? 0);
     } catch (err) {
-      raw = new Float32Array(8);
+      raw = new Float32Array(9);
       console.warn('score_orientation failed, using fallback', err);
     }
-    const [, , , overhang, foot, cross, surf, height] = raw;
+    const [, , , overhang, foot, cross, surf, height, shadowed] = raw;
 
     const { lo, hi } = normBounds;
     const clamp = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v;
     const span = (i: number) => Math.max(hi[i] - lo[i], 1e-9);
     const bboxDiag = this.deps.state.get('bboxDiagonal');
     const heightCost = clamp((height - lo[4]) / span(4));
+    const shadowedCost = clamp((shadowed - lo[5]) / span(5));
     const costs = [
       clamp((overhang - lo[0]) / span(0)), clamp((foot - lo[1]) / span(1)),
       clamp((cross - lo[2]) / span(2)), clamp((hi[3] - surf) / span(3)),
-      heightCost,
+      heightCost, shadowedCost,
     ];
 
     const profile = this.deps.state.get('currentProfile');
     const w = WEIGHT_PRESETS[profile] ?? WEIGHT_PRESETS[DEFAULT_PROFILE];
-    const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight];
+    const weights = [w.wOverhang, w.wFootprint, w.wCross, w.wSurface, w.wHeight, w.wShadowed];
 
     const ranker = this.deps.state.get('currentRanker');
     let score: number;
@@ -298,7 +299,7 @@ export class AppController {
     this.deps.progressLabel.textContent = 'Computing candidates...';
     const profile = this.deps.state.get('currentProfile');
     const weights = WEIGHT_PRESETS[profile] ?? WEIGHT_PRESETS[DEFAULT_PROFILE];
-    const wArr: [number, number, number, number, number] = [weights.wOverhang, weights.wFootprint, weights.wCross, weights.wSurface, weights.wHeight];
+    const wArr: [number, number, number, number, number, number] = [weights.wOverhang, weights.wFootprint, weights.wCross, weights.wSurface, weights.wHeight, weights.wShadowed];
 
     const worker = this.deps.workerFactory();
     this.currentWorker = worker;
@@ -401,7 +402,10 @@ export class AppController {
     const lod = this.deps.state.get('lastOriData');
     if (!lod) return;
     const q = this.deps.viewport.getMeshQuaternion();
-    exportSTL(rotatePositions(lod.positions, q), this.deps.state.get('stlName'), this.deps.state.get('currentIndex') + 1);
+    const conv = this.deps.state.get('loadConvention');
+    const rotated = rotatePositions(lod.positions, q);
+    const frameFixed = inverseConvention(rotated, conv);
+    exportSTL(frameFixed, this.deps.state.get('stlName'), this.deps.state.get('currentIndex') + 1);
   }
 
   // ── Config Persistence ──

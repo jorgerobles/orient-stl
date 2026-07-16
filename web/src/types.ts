@@ -61,6 +61,7 @@ export interface ScoreWeights {
   wCross: number;
   wSurface: number;
   wHeight: number;
+  wShadowed: number;
 }
 
 // ─── Worker message types (defined but not applied until Plan 03) ───
@@ -73,7 +74,7 @@ export type WorkerMessage =
 export interface WorkerRequest {
   data: OriData;
   config: ComputeConfig;
-  weights: [number, number, number, number, number];
+  weights: [number, number, number, number, number, number];
   ranker: string;
   maxCandidates: number;
   minAngleDeg: number;

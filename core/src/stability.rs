@@ -1,5 +1,4 @@
 use crate::mesh::MeshData;
-use crate::hull::ConvexHull;
 
 pub struct StabilityResult {
     pub stable: bool,
@@ -7,10 +6,34 @@ pub struct StabilityResult {
     pub contact_area: f32,
 }
 
+/// Area-weighted center of mass (surface-centroid approximation).
+/// Σ(area_i · centroid_i) / Σ(area_i) using MeshData triangles.
+pub(crate) fn center_of_mass(mesh: &MeshData) -> [f32; 3] {
+    let mut com = [0.0f32; 3];
+    let mut total_area = 0.0f32;
+    for i in 0..mesh.triangle_count {
+        let v0 = mesh.vertices[i * 3];
+        let v1 = mesh.vertices[i * 3 + 1];
+        let v2 = mesh.vertices[i * 3 + 2];
+        let cx = (v0[0] + v1[0] + v2[0]) / 3.0;
+        let cy = (v0[1] + v1[1] + v2[1]) / 3.0;
+        let cz = (v0[2] + v1[2] + v2[2]) / 3.0;
+        let a = mesh.areas[i];
+        com[0] += a * cx;
+        com[1] += a * cy;
+        com[2] += a * cz;
+        total_area += a;
+    }
+    if total_area > 1e-12 {
+        let inv = 1.0 / total_area;
+        com = [com[0] * inv, com[1] * inv, com[2] * inv];
+    }
+    com
+}
+
 pub fn check_stability(
     direction: &[f32; 3],
     mesh: &MeshData,
-    hull: &ConvexHull,
 ) -> StabilityResult {
     let dn_ln = (direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]).sqrt();
     if dn_ln < 1e-8 {
@@ -49,14 +72,7 @@ pub fn check_stability(
     let hull_2d = convex_hull_2d(&footprint_pts);
     let contact_area = polygon_area(&hull_2d);
 
-    let mut com = [0.0f32; 3];
-    for v in &mesh.vertices {
-        com[0] += v[0];
-        com[1] += v[1];
-        com[2] += v[2];
-    }
-    let n = mesh.vertices.len() as f32;
-    com = [com[0] / n, com[1] / n, com[2] / n];
+    let com = center_of_mass(mesh);
 
     let com_x = com[0] * up_x[0] + com[1] * up_x[1] + com[2] * up_x[2];
     let com_y = com[0] * up_y[0] + com[1] * up_y[1] + com[2] * up_y[2];
@@ -73,7 +89,6 @@ pub fn check_stability(
         1.0
     };
 
-    let _ = hull;
     StabilityResult {
         stable: true,
         margin: norm_margin,
@@ -202,7 +217,6 @@ fn min_edge_distance(point: &[f32; 2], poly: &[[f32; 2]]) -> f32 {
 mod tests {
     use super::*;
     use crate::mesh::precompute_mesh;
-    use crate::hull::compute_hull;
 
     fn cube_mesh() -> MeshData {
         let mut positions = Vec::new();
@@ -228,19 +242,36 @@ mod tests {
         precompute_mesh(&positions)
     }
 
-    fn cube_hull() -> ConvexHull {
-        let verts: Vec<[f32; 3]> = [
-            [-1.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [-1.0, -1.0, 1.0],
-            [-1.0, 1.0, -1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0],
-        ].to_vec();
-        compute_hull(&verts)
+
+
+    #[test]
+    fn center_of_mass_is_area_weighted() {
+        // RED: this test FAILS with the vertex-centroid formula.
+        // One large triangle at x≈-1 (area=4, centroid_x≈-0.667) vs 10 tiny
+        // triangles at x≈+1 (area≈0.01 each, centroid_x≈0.933).
+        // Vertex centroid: com_x ≈ 0.788 (biased by vertex count).
+        // Area-weighted com: com_x ≈ -0.628.
+        let mut pos = Vec::new();
+        // Large triangle (legs 4×2, area=4)
+        pos.extend_from_slice(&[-2.0, -1.0, 0.0, 2.0, -1.0, 0.0, -2.0, 1.0, 0.0]);
+        // 10 tiny triangles near x≈+1
+        for _ in 0..10 {
+            pos.extend_from_slice(&[0.9, -0.1, 0.0, 0.9, 0.1, 0.0, 1.0, 0.0, 0.0]);
+        }
+        let mesh = crate::mesh::precompute_mesh(&pos);
+        let com = center_of_mass(&mesh);
+        // Area-weighted centroid_x ≈ -0.628; vertex-centroid gives ≈ 0.788.
+        assert!(
+            com[0] < -0.5,
+            "com[0]={} should be < -0.5 (biased toward large triangle at x≈-1, not tiny ones at +1)",
+            com[0]
+        );
     }
 
     #[test]
     fn cube_flat_face_stable() {
         let mesh = cube_mesh();
-        let hull = cube_hull();
-        let stability = check_stability(&[0.0, 0.0, -1.0], &mesh, &hull);
+        let stability = check_stability(&[0.0, 0.0, -1.0], &mesh);
         assert!(stability.stable, "Cube on face should be stable");
         assert!(stability.margin > 0.0);
         assert!(stability.contact_area > 0.0);
@@ -249,9 +280,8 @@ mod tests {
     #[test]
     fn cube_vertex_down_low_contact() {
         let mesh = cube_mesh();
-        let hull = cube_hull();
         let dir = [-0.57735, -0.57735, -0.57735];
-        let stability = check_stability(&dir, &mesh, &hull);
+        let stability = check_stability(&dir, &mesh);
         assert!(stability.contact_area < 0.1, "Cube on vertex should have tiny contact area");
     }
 
@@ -259,8 +289,7 @@ mod tests {
     fn horizontal_triangle_single() {
         let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let mesh = precompute_mesh(&positions);
-        let hull = compute_hull(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
-        let stability = check_stability(&[0.0, 0.0, -1.0], &mesh, &hull);
+        let stability = check_stability(&[0.0, 0.0, -1.0], &mesh);
         assert!(stability.stable);
         assert!(stability.contact_area > 0.0);
     }
