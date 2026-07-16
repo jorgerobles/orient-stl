@@ -1,7 +1,7 @@
 use crate::mesh::MeshData;
 
 /// Build an orthonormal basis (e1, e2) perpendicular to `d` (assumed unit).
-fn perpendicular_basis(d: &[f32; 3]) -> ([f32; 3], [f32; 3]) {
+pub(crate) fn perpendicular_basis(d: &[f32; 3]) -> ([f32; 3], [f32; 3]) {
     let a = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
     // e1 = normalize(d × a)
     let e1 = [
@@ -187,15 +187,22 @@ pub(crate) fn min_z_height(direction: &[f32; 3], mesh: &MeshData) -> f32 {
     }
 }
 
+/// Default grid resolution for H11 shadowed-overhang estimation.
+pub const SHADOWED_GRID_RES: usize = 32;
+/// Default height tolerance fraction for H11 (fraction of span along direction).
+pub const SHADOWED_TOL: f32 = 0.02;
+
 /// Composite score — raw component tuple for the harness to normalise and
 /// combine. Covers H1 (overhang), H4 (footprint), H2 (max cross-section),
-/// H5 (surface quality — maximise), and H6 (print height — minimise).
+/// H5 (surface quality — maximise), H6 (print height — minimise),
+/// and H11 (shadowed-overhang fraction).
 pub struct ScoreComponents {
     pub overhang: f32,
     pub footprint: f32,
     pub max_cross: f32,
     pub surface_quality: f32,
     pub height: f32,
+    pub shadowed: f32,
 }
 
 pub fn score_components(
@@ -211,6 +218,7 @@ pub fn score_components(
         max_cross: max_cross_section(direction, mesh, cross_bins),
         surface_quality: misalignment_score(direction, mesh),
         height: overhang * min_z_height(direction, mesh),
+        shadowed: shadowed_overhang_fraction(direction, mesh, critical_angle_deg, SHADOWED_GRID_RES, SHADOWED_TOL),
     }
 }
 

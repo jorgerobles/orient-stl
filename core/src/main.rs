@@ -14,9 +14,9 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use orient_core::decimate::sample_for_hull;
-use orient_core::hull::{self, ConvexHull};
+use orient_core::hull;
 use orient_core::mesh::MeshData;
-use orient_core::ranking::{CandidateMetrics, ScoreWeights, rank_by_consensus, rank_by_topsis, rank_by_weights};
+use orient_core::ranking::{CandidateMetrics, ScoreWeights, rank_by_consensus, rank_by_topsis, rank_by_weights, to_display_score};
 use orient_core::scoring;
 use orient_core::selection;
 use orient_core::stability;
@@ -54,9 +54,9 @@ struct Args {
     #[arg(long, default_value_t = String::from("weights"))]
     method: String,
 
-    /// Five weights: overhang footprint cross surface height
-    #[arg(long, default_value = "1.0,1.0,1.0,1.0,1.0", value_parser = parse_weights)]
-    weights: [f32; 5],
+    /// Six weights: overhang footprint cross surface height shadowed
+    #[arg(long, default_value = "1.0,1.0,1.0,1.0,1.0,1.0", value_parser = parse_weights)]
+    weights: [f32; 6],
 
     /// Maximum candidates in the final diverse subset
     #[arg(long, default_value_t = 20)]
@@ -87,12 +87,12 @@ struct Args {
     convention: String,
 }
 
-fn parse_weights(s: &str) -> Result<[f32; 5], String> {
+fn parse_weights(s: &str) -> Result<[f32; 6], String> {
     let v: Vec<f32> = s.split(',').map(|x| x.trim().parse::<f32>().map_err(|e| format!("{e}"))).collect::<Result<Vec<_>, _>>()?;
-    if v.len() != 5 {
-        return Err(format!("expected 5 comma-separated weights, got {}", v.len()));
+    if v.len() != 6 {
+        return Err(format!("expected 6 comma-separated weights, got {}", v.len()));
     }
-    let mut out = [0.0f32; 5];
+    let mut out = [0.0f32; 6];
     out.copy_from_slice(&v);
     Ok(out)
 }
@@ -101,15 +101,15 @@ fn parse_weights(s: &str) -> Result<[f32; 5], String> {
 // Profile presets (mirrors web/src/profiles/*.json)
 // ---------------------------------------------------------------------------
 
-const PROFILES: &[(&str, [f32; 5])] = &[
-    ("overhang-only",       [1.0, 0.0, 0.0, 0.0, 0.0]),
-    ("footprint-only",      [0.0, 1.0, 0.0, 0.0, 0.0]),
-    ("cross-only",          [0.0, 0.0, 1.0, 0.0, 0.0]),
-    ("surface-only",        [0.0, 0.0, 0.0, 1.0, 0.0]),
-    ("height-only",         [0.0, 0.0, 0.0, 0.0, 1.0]),
-    ("overhang-footprint",  [1.0, 1.0, 0.0, 0.0, 0.0]),
-    ("equal",               [1.0, 1.0, 1.0, 1.0, 1.0]),
-    ("resin-biased",        [0.5, 1.0, 2.0, 0.5, 0.5]),
+const PROFILES: &[(&str, [f32; 6])] = &[
+    ("overhang-only",       [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ("footprint-only",      [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]),
+    ("cross-only",          [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+    ("surface-only",        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+    ("height-only",         [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+    ("overhang-footprint",  [1.0, 1.0, 0.0, 0.0, 0.0, 0.5]),
+    ("equal",               [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+    ("resin-biased",        [0.5, 1.0, 2.0, 0.5, 0.5, 2.0]),
 ];
 
 const RANKERS: &[&str] = &["weights", "consensus", "topsis"];
@@ -141,7 +141,7 @@ struct Meta {
     triangle_count: usize,
     candidate_count: usize,
     method: String,
-    weights: [f32; 5],
+    weights: [f32; 6],
     critical_angle_deg: f32,
     refine_iters: u32,
     exclude_unstable: bool,
@@ -172,7 +172,6 @@ struct CandidateOut {
 fn score_one(
     dir: &[f32; 3],
     mesh: &MeshData,
-    hull: &ConvexHull,
     critical_angle_deg: f32,
     refine_iters: u32,
 ) -> ([f32; 4], [f32; 3], scoring::ScoreComponents, f32, stability::StabilityResult) {
@@ -188,8 +187,8 @@ fn score_one(
     };
 
     let c = scoring::score_components(&final_dir, mesh, critical_angle_deg, 64);
-    let shadowed = scoring::shadowed_overhang_fraction(&final_dir, mesh, critical_angle_deg, 32, 0.02);
-    let stab = stability::check_stability(&final_dir, mesh, hull);
+    let shadowed = c.shadowed;
+    let stab = stability::check_stability(&final_dir, mesh);
     let q = yaw::full_quaternion(&final_dir, mesh);
 
     (q, final_dir, c, shadowed, stab)
@@ -254,7 +253,7 @@ fn main() -> Result<(), String> {
     let mut raw_stable: Vec<bool> = Vec::with_capacity(n_dirs);
 
     for d in &dirs {
-        let (q, fd, c, shadowed, stab) = score_one(d, &mesh, &hull, crit, args.refine_iters);
+        let (q, fd, c, shadowed, stab) = score_one(d, &mesh, crit, args.refine_iters);
         raw_q.push(q);
         raw_dir.push(fd);
         raw_stable.push(stab.stable);
@@ -271,7 +270,7 @@ fn main() -> Result<(), String> {
     // Recompute stability for all candidates
     let mut stab_details: Vec<stability::StabilityResult> = Vec::with_capacity(n_dirs);
     for d in &raw_dir {
-        let stab = stability::check_stability(d, &mesh, &hull);
+        let stab = stability::check_stability(d, &mesh);
         stab_details.push(stab);
     }
 
@@ -280,14 +279,22 @@ fn main() -> Result<(), String> {
         let mut rankings = Vec::new();
 
         // Use equal+weights as the primary ranking for diversity selection
-        let primary_w = ScoreWeights { w_overhang: 1.0, w_footprint: 1.0, w_cross: 1.0, w_surface: 1.0, w_height: 1.0 };
+        let primary_w = ScoreWeights { w_overhang: 1.0, w_footprint: 1.0, w_cross: 1.0, w_surface: 1.0, w_height: 1.0, w_shadowed: 1.0 };
+        let primary_w_sum: f32 = 6.0;
         let primary_ranked = rank_by_weights(&metrics, &primary_w);
+
+        // Build lookup: candidate index → display score from primary ranking
+        let mut display_lookup = vec![0.0f32; dirs.len()];
+        for &(idx, raw) in &primary_ranked {
+            display_lookup[idx] = to_display_score(raw, "weights", primary_w_sum);
+        }
 
         for (profile_name, pw) in PROFILES {
             let w = ScoreWeights {
                 w_overhang: pw[0], w_footprint: pw[1], w_cross: pw[2],
-                w_surface: pw[3], w_height: pw[4],
+                w_surface: pw[3], w_height: pw[4], w_shadowed: pw[5],
             };
+            let pw_sum: f32 = pw.iter().sum();
             for ranker_name in RANKERS {
                 let ranked = match *ranker_name {
                     "weights" => rank_by_weights(&metrics, &w),
@@ -300,15 +307,15 @@ fn main() -> Result<(), String> {
                         candidate: idx,
                         profile: profile_name.to_string(),
                         ranker: ranker_name.to_string(),
-                        composite_score: score,
+                        composite_score: to_display_score(score, ranker_name, pw_sum),
                         rank: pos + 1,
                     });
                 }
             }
         }
 
-        // Candidates in index order
-        let c_out: Vec<CandidateOut> = (0..n_dirs)
+        // Candidates in index order, with primary ranking display score
+        let c_out: Vec<CandidateOut> = (0..dirs.len())
             .map(|i| {
                 let m = &metrics[i];
                 CandidateOut {
@@ -324,7 +331,7 @@ fn main() -> Result<(), String> {
                     stable: stab_details[i].stable,
                     stability_margin: stab_details[i].margin,
                     contact_area: stab_details[i].contact_area,
-                    composite_score: 0.0,
+                    composite_score: display_lookup[i],
                 }
             })
             .collect();
@@ -343,7 +350,9 @@ fn main() -> Result<(), String> {
             w_cross: args.weights[2],
             w_surface: args.weights[3],
             w_height: args.weights[4],
+            w_shadowed: args.weights[5],
         };
+        let w_sum: f32 = args.weights.iter().sum();
         let ranked = match args.method.as_str() {
             "weights" => rank_by_weights(&metrics, &w),
             "consensus" => rank_by_consensus(&metrics, &w),
@@ -351,8 +360,8 @@ fn main() -> Result<(), String> {
             other => return Err(format!("Unknown method '{other}'; expected weights, consensus, or topsis")),
         };
 
-        // Build full candidate output (ranked order)
-        let mut c_out: Vec<CandidateOut> = ranked
+        // Build full candidate output (ranked order) with display scores
+        let c_out: Vec<CandidateOut> = ranked
             .iter()
             .map(|&(idx, score)| {
                 CandidateOut {
@@ -368,7 +377,7 @@ fn main() -> Result<(), String> {
                     stable: stab_details[idx].stable,
                     stability_margin: stab_details[idx].margin,
                     contact_area: stab_details[idx].contact_area,
-                    composite_score: score,
+                    composite_score: to_display_score(score, &args.method, w_sum),
                 }
             })
             .collect();
@@ -387,7 +396,7 @@ fn main() -> Result<(), String> {
         meta: Meta {
             stl: args.stl.to_string_lossy().to_string(),
             triangle_count: mesh.triangle_count,
-            candidate_count: n_dirs,
+            candidate_count: dirs.len(),
             method: args.method,
             weights: args.weights,
             critical_angle_deg: crit,

@@ -9,13 +9,14 @@ export interface ScorePanelData {
   hint: string;
 }
 
-const METRIC_NAMES = ['Overhang', 'Footprint', 'Cross-sect', 'Surface', 'Height Risk'];
+const METRIC_NAMES = ['Supports', 'Bed Space', 'Layer Width', 'Finish', 'Height Risk', 'Hard-to-Reach'];
 const METRIC_DESCS = [
-  'Faces needing supports (lower=better)',
-  'Base contact area (lower=better)',
-  'Max layer material — peel force (lower=better)',
-  'Axis misalignment — resin finish (higher=better)',
-  'Height × overhang risk (lower=better)',
+  'Surfaces that lean too far and need supports to print correctly',
+  'How much build-plate space the model occupies in this orientation',
+  'Widest single layer — wider layers are harder to peel in resin',
+  'How smooth the visible surfaces turn out when printed this way',
+  'How tall the print stands while carrying overhanging parts',
+  'Hidden spots under overhangs that supports struggle to reach',
 ];
 
 function qColor(q: number): string {

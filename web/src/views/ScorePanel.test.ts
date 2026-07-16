@@ -16,8 +16,8 @@ describe("ScorePanel", () => {
 
     panel.update({
       score: 0.85,
-      costs: [0.1, 0.2, 0.3, 0.4, 0.5],
-      weights: [0.3, 0.2, 0.2, 0.15, 0.15],
+      costs: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+      weights: [0.3, 0.2, 0.2, 0.15, 0.1, 0.05],
       profileLabel: "Resin Printing",
       rankerLabel: "Consensus",
       hint: "Minimax explanation",
@@ -26,7 +26,7 @@ describe("ScorePanel", () => {
     expect(scoreBig.textContent).toBe("85%");
   });
 
-  it("update sets spRows.innerHTML to 5 metric bar rows", () => {
+  it("update sets spRows.innerHTML to 6 metric bar rows", () => {
     const scoreBig = mockEl();
     const spProfile = mockEl();
     const spRanker = mockEl();
@@ -36,8 +36,8 @@ describe("ScorePanel", () => {
 
     panel.update({
       score: 0.7,
-      costs: [0.1, 0.2, 0.3, 0.4, 0.5],
-      weights: [0.3, 0.2, 0.2, 0.15, 0.15],
+      costs: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+      weights: [0.3, 0.2, 0.2, 0.15, 0.1, 0.05],
       profileLabel: "Balanced",
       rankerLabel: "TOPSIS",
       hint: "TOPSIS explanation",
@@ -46,12 +46,13 @@ describe("ScorePanel", () => {
     expect(spProfile.textContent).toBe("Balanced");
     expect(spRanker.textContent).toBe("TOPSIS");
     expect(spHint.textContent).toBe("TOPSIS explanation");
-    // Should render 5 metric rows (Overhang, Footprint, Cross-sect, Surface, Height)
+    // Should render 6 metric bar rows (Supports, Bed Space, Layer Width, Finish, Height Risk, Hard-to-Reach)
     const html = spRows.innerHTML as string;
-    expect(html).toContain("Overhang");
-    expect(html).toContain("Footprint");
-    expect(html).toContain("Cross-sect");
-    expect(html).toContain("Surface");
+    expect(html).toContain("Supports");
+    expect(html).toContain("Bed Space");
+    expect(html).toContain("Layer Width");
+    expect(html).toContain("Finish");
     expect(html).toContain("Height");
+    expect(html).toContain("Hard-to-Reach");
   });
 });

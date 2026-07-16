@@ -7,7 +7,7 @@ use crate::decimate::sample_for_hull;
 use crate::hull::compute_hull;
 use crate::mesh::precompute_mesh;
 use crate::ranking::{CandidateMetrics, ScoreWeights, rank_by_weights};
-use crate::scoring::{footprint_area, max_cross_section, misalignment_score, min_z_height, score_candidate};
+use crate::scoring::{footprint_area, max_cross_section, misalignment_score, min_z_height, score_candidate, shadowed_overhang_fraction};
 use crate::stl::parse_stl;
 
 struct WeightCfg {
@@ -17,6 +17,7 @@ struct WeightCfg {
     w_cross: f32,
     w_surface: f32,
     w_height: f32,
+    w_shadowed: f32,
 }
 
 #[ignore]
@@ -28,14 +29,14 @@ fn harness_run() {
         (root.join("resources/Skulled_Wurm_Bird_WOBase.stl"), "bird"),
     ];
     let configs = [
-        WeightCfg { name: "overhang-only (current v1)", w_overhang: 1.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0 },
-        WeightCfg { name: "footprint-only (naive)", w_overhang: 0.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0 },
-        WeightCfg { name: "cross-only (peel-force)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 1.0, w_surface: 0.0, w_height: 0.0 },
-        WeightCfg { name: "surface-only (finish)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 1.0, w_height: 0.0 },
-        WeightCfg { name: "height-only (fast print)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 0.0, w_height: 1.0 },
-        WeightCfg { name: "equal-weights", w_overhang: 1.0, w_footprint: 1.0, w_cross: 1.0, w_surface: 1.0, w_height: 1.0 },
-        WeightCfg { name: "resin-biased (cross-heavy)", w_overhang: 0.5, w_footprint: 1.0, w_cross: 2.0, w_surface: 0.5, w_height: 0.5 },
-        WeightCfg { name: "overhang+footprint (no cross)", w_overhang: 1.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0 },
+        WeightCfg { name: "overhang-only (current v1)", w_overhang: 1.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0, w_shadowed: 0.0 },
+        WeightCfg { name: "footprint-only (naive)", w_overhang: 0.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0, w_shadowed: 0.0 },
+        WeightCfg { name: "cross-only (peel-force)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 1.0, w_surface: 0.0, w_height: 0.0, w_shadowed: 0.0 },
+        WeightCfg { name: "surface-only (finish)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 1.0, w_height: 0.0, w_shadowed: 0.0 },
+        WeightCfg { name: "height-only (fast print)", w_overhang: 0.0, w_footprint: 0.0, w_cross: 0.0, w_surface: 0.0, w_height: 1.0, w_shadowed: 0.0 },
+        WeightCfg { name: "equal-weights", w_overhang: 1.0, w_footprint: 1.0, w_cross: 1.0, w_surface: 1.0, w_height: 1.0, w_shadowed: 1.0 },
+        WeightCfg { name: "resin-biased (cross-heavy)", w_overhang: 0.5, w_footprint: 1.0, w_cross: 2.0, w_surface: 0.5, w_height: 0.5, w_shadowed: 2.0 },
+        WeightCfg { name: "overhang+footprint (no cross)", w_overhang: 1.0, w_footprint: 1.0, w_cross: 0.0, w_surface: 0.0, w_height: 0.0, w_shadowed: 0.5 },
     ];
     let bins = 64usize;
     let crit = 30.0f32;
@@ -69,12 +70,14 @@ fn harness_run() {
         let mut crs = Vec::with_capacity(dirs.len());
         let mut sfs = Vec::with_capacity(dirs.len());
         let mut hts = Vec::with_capacity(dirs.len());
+        let mut shs = Vec::with_capacity(dirs.len());
         for d in &dirs {
             overs.push(score_candidate(d, &mesh, crit));
             fps.push(footprint_area(d, &mesh));
             crs.push(max_cross_section(d, &mesh, bins));
             sfs.push(misalignment_score(d, &mesh));
             hts.push(min_z_height(d, &mesh));
+            shs.push(shadowed_overhang_fraction(d, &mesh, crit, 32, 0.02));
         }
 
         // Raw component ranges (for reference).
@@ -84,8 +87,9 @@ fn harness_run() {
         println!("    maxcross:  {:.3} .. {:.3}", minOf(&crs), maxOf(&crs));
         println!("    surface:   {:.3} .. {:.3}", minOf(&sfs), maxOf(&sfs));
         println!("    height:    {:.3} .. {:.3}", minOf(&hts), maxOf(&hts));
+        println!("    shadowed:  {:.3} .. {:.3}", minOf(&shs), maxOf(&shs));
 
-        // Build CandidateMetrics vector (no shadowed — set to 0).
+        // Build CandidateMetrics vector with real shadowed values.
         let metrics: Vec<CandidateMetrics> = (0..dirs.len())
             .map(|i| CandidateMetrics {
                 overhang: overs[i],
@@ -93,7 +97,7 @@ fn harness_run() {
                 max_cross: crs[i],
                 surface: sfs[i],
                 height: hts[i],
-                shadowed: 0.0,
+                shadowed: shs[i],
             })
             .collect();
 
@@ -104,6 +108,7 @@ fn harness_run() {
                 w_cross: cfg.w_cross,
                 w_surface: cfg.w_surface,
                 w_height: cfg.w_height,
+                w_shadowed: cfg.w_shadowed,
             };
             let ranked = rank_by_weights(&metrics, &w);
             if ranked.is_empty() {
