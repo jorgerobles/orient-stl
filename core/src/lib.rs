@@ -7,6 +7,7 @@ pub mod stability;
 pub mod decimate;
 pub mod rng;
 pub mod ranking;
+pub mod repair;
 pub mod selection;
 pub mod yaw;
 #[cfg(test)]
@@ -66,7 +67,8 @@ pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> R
         return Err("No triangles in STL".into());
     }
 
-    let flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
+    let mut flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
+    repair::repair_mesh(&mut flat);
     let m = mesh::precompute_mesh(&flat);
     if m.triangle_count == 0 {
         return Err("All triangles are degenerate".into());
