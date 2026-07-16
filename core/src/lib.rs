@@ -51,6 +51,8 @@ pub struct OriData {
     pub normals: Vec<f32>,
     pub areas: Vec<f32>,
     pub directions: Vec<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repair_removed: Option<u32>,
 }
 
 /// Ungated native entry point. Parses STL bytes, precomputes mesh, computes
@@ -109,6 +111,7 @@ pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> R
         normals: normals_flat,
         areas: m.areas,
         directions: dir_flat,
+        repair_removed: None,
     })
 }
 
@@ -122,7 +125,10 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
 
     // Auto-repair the soup before returning
+    let old_tris = od.normals.len() / 3;
     repair::repair_mesh(&mut od.positions, &mut od.normals, &mut od.areas);
+    let new_tris = od.normals.len() / 3;
+    od.repair_removed = Some((old_tris - new_tris) as u32);
 
     serde_wasm_bindgen::to_value(&od).unwrap()
 }

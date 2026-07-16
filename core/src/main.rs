@@ -213,7 +213,12 @@ fn main() -> Result<(), String> {
 
     // Optional mesh repair (on by default)
     if !args.no_repair {
+        let old_tris = od.normals.len() / 3;
         repair::repair_mesh(&mut od.positions, &mut od.normals, &mut od.areas);
+        let new_tris = od.normals.len() / 3;
+        if old_tris > new_tris {
+            od.repair_removed = Some((old_tris - new_tris) as u32);
+        }
     }
 
     // Apply axis convention (z-up → y-up swap)
