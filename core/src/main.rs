@@ -231,7 +231,7 @@ fn main() -> Result<(), String> {
 
     // 3. Hull (needed for stability)
     let hull_verts = sample_for_hull(&mesh.vertices);
-    let hull = hull::compute_hull(&hull_verts);
+    let _hull = hull::compute_hull(&hull_verts);
 
     // 4. Reconstruct direction list from flat array
     let n_dirs = od.directions.len() / 3;
