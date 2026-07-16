@@ -194,14 +194,10 @@ export class AppController {
     if (!this.lastFileBytes) return null;
     const config = this.deps.state.get('config');
     const raw = prepareData(this.lastFileBytes, config as unknown as Record<string, unknown>) as unknown as {
-      positions: number[]; normals: number[]; areas: number[]; directions: number[]; repairRemoved?: number;
+      positions: number[]; normals: number[]; areas: number[]; directions: number[];
     };
     if (raw.positions.length === 0 || raw.directions.length === 0) return null;
     const conv = this.deps.state.get('loadConvention');
-    const removed = raw.repairRemoved ?? 0;
-    if (removed > 0) {
-      this.deps.statusEl.textContent = `Repair removed ${removed} bad triangle${removed > 1 ? 's' : ''} ...`;
-    }
     return {
       positions: applyConvention(new Float32Array(raw.positions), conv),
       normals: applyConvention(new Float32Array(raw.normals), conv),
