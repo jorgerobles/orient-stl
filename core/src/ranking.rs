@@ -137,7 +137,7 @@ pub fn rank_by_consensus_with_bounds(
 
     let clamp = |v: f32| v.clamp(0.0, 1.0);
     let norm = |lo: f32, span: f32, v: f32| -> f32 { clamp((v - lo) / span) };
-    let invert = |lo: f32, hi: f32, span: f32, v: f32| -> f32 { clamp((hi - v) / span) };
+    let invert = |_lo: f32, hi: f32, span: f32, v: f32| -> f32 { clamp((hi - v) / span) };
 
     let (o_lo, o_sp, f_lo, f_sp, c_lo, c_sp, s_lo, s_hi, s_sp, h_lo, h_sp, sh_lo, sh_sp) =
         match (norm_lo, norm_hi) {

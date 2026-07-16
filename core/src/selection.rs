@@ -49,6 +49,7 @@ pub fn merge_candidates(
     result
 }
 
+#[allow(dead_code)]
 /// Angle (in degrees) between two 3D vectors.
 pub(crate) fn angle_between(a: &[f32; 3], b: &[f32; 3]) -> f32 {
     let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
