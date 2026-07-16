@@ -324,7 +324,7 @@ pub fn shadowed_overhang_fraction(
         // Edge functions for barycentric containment of cell centres.
         let w0u = v1 - v2; let w0v = u2 - u1;
         let w1u = v2 - v0; let w1v = u0 - u2;
-        let w2u = v0 - v1; let w2v = u1 - u0;
+        let w2u = v0 - v1; let _w2v = u1 - u0;
         let area = u0 * w0u + u1 * w1u + u2 * w2u; // = 2× signed triangle area in (u,v)
         if area.abs() < 1e-12 {
             continue;

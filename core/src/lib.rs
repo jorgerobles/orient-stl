@@ -25,6 +25,7 @@ pub fn init() {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct OrientConfig {
     #[serde(default = "default_mode")]
     mode: String,
