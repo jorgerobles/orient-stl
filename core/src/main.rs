@@ -21,7 +21,7 @@ use orient_core::scoring;
 use orient_core::selection;
 use orient_core::stability;
 use orient_core::yaw;
-use orient_core::{normalise_dir, prepare_data_native, reconstruct_mesh};
+use orient_core::{normalise_dir, prepare_data_native, reconstruct_mesh, repair};
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -85,6 +85,10 @@ struct Args {
     /// Axis convention: "y-up" or "z-up" (applies swap to mesh before scoring)
     #[arg(long, default_value_t = String::from("z-up"))]
     convention: String,
+
+    /// Skip mesh repair (weld vertices, cull slivers, remove duplicates)
+    #[arg(long)]
+    no_repair: bool,
 }
 
 fn parse_weights(s: &str) -> Result<[f32; 6], String> {
@@ -206,6 +210,11 @@ fn main() -> Result<(), String> {
 
     // 2. Parse, precompute, generate candidates
     let mut od = prepare_data_native(&bytes, &args.mode, args.dedupe_angle)?;
+
+    // Optional mesh repair (on by default)
+    if !args.no_repair {
+        repair::repair_mesh(&mut od.positions, &mut od.normals, &mut od.areas);
+    }
 
     // Apply axis convention (z-up → y-up swap)
     if args.convention == "z-up" {
