@@ -9,6 +9,7 @@ pub mod rng;
 pub mod ranking;
 pub mod selection;
 pub mod yaw;
+pub mod repair;
 #[cfg(test)]
 mod harness;
 
@@ -117,8 +118,11 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&format!("Invalid config: {e}")));
 
-    let od = prepare_data_native(bytes, &config.mode, config.dedupe_angle_deg)
+    let mut od = prepare_data_native(bytes, &config.mode, config.dedupe_angle_deg)
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
+
+    // Auto-repair the soup before returning
+    repair::repair_mesh(&mut od.positions, &mut od.normals, &mut od.areas);
 
     serde_wasm_bindgen::to_value(&od).unwrap()
 }
