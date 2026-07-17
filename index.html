@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Orient STL — Resin Printing Orientation Tool</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <script type="module" crossorigin src="/orient-stl/assets/index-C9p5m1zz.js"></script>
-  <link rel="stylesheet" crossorigin href="/orient-stl/assets/index-HO70fvzN.css">
+  <script type="module" crossorigin src="/orient-stl/assets/index-8NAOWP7c.js"></script>
+  <link rel="stylesheet" crossorigin href="/orient-stl/assets/index-0evSmbgr.css">
 </head>
 <body>
   <main>
@@ -32,6 +32,12 @@
       </label>
     </div>
 
+    <div id="mesh-health" class="mesh-health" style="display:none">
+      <span id="health-file" class="health-file"></span>
+      <span id="health-dot" class="health-dot" aria-hidden="true"></span>
+      <span id="health-text" class="health-text"></span>
+    </div>
+
     <div class="config-panel">
       <h3>Configuration</h3>
       <label>
@@ -52,6 +58,11 @@
         Hull+Sphere Mode
       </label>
       <p class="hint">Include ~200 Fibonacci-sphere candidates.</p>
+      <label class="config-checkbox">
+        <input type="checkbox" id="auto-repair-toggle" />
+        Auto-repair
+      </label>
+      <p class="hint">Fix holes and weld nearby vertices. Use for broken or scanned STLs.</p>
       <label>
         Optimize for:
         <select id="profile-select">
@@ -74,6 +85,8 @@
       </div>
       <button id="recalc-btn" class="button button-sm" style="width:100%;margin-top:0.4rem" disabled>Recalculate</button>
     </div>
+
+    <div class="build-info" id="build-info"></div>
 
     <div id="progress-container" class="progress-container" style="display:none">
       <div class="progress-bar-bg">
