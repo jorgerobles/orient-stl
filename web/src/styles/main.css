@@ -49,6 +49,13 @@ body {
   left: 16px;
   width: 280px;
   max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-left-content {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 1.25rem;
 }
@@ -408,7 +415,8 @@ h1 {
   font-size: 0.7rem;
   color: #666;
   text-align: center;
-  padding: 0.5rem 0 0;
+  padding: 0 1.25rem 0.75rem;
+  flex-shrink: 0;
 }
 
 /* ─── Scrollbar ─── */
