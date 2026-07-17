@@ -37,6 +37,8 @@ struct OrientConfig {
     refine_iterations: u32,
     #[serde(default = "default_exclude_unstable")]
     exclude_unstable: bool,
+    #[serde(default = "default_max_hole_edges")]
+    max_hole_edges: u32,
 }
 
 fn default_mode() -> String { "hull".to_string() }
@@ -44,6 +46,7 @@ fn default_critical_angle() -> f32 { 30.0 }
 fn default_dedupe_angle() -> f32 { 3.0 }
 fn default_refine() -> u32 { 0 }
 fn default_exclude_unstable() -> bool { true }
+fn default_max_hole_edges() -> u32 { 0 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +61,14 @@ pub struct OriData {
 /// the convex hull, generates candidate directions (with optional sphere
 /// blending), and returns the mesh data + flattened directions.
 pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> Result<OriData, String> {
+    prepare_data_native_with_repair(bytes, mode, dedupe_angle_deg, 0)
+}
+
+/// Native entry point with optional hole filling.
+/// `max_hole_edges`: 0 = skip hole filling, >0 = fill holes with ≤ N edges.
+pub fn prepare_data_native_with_repair(
+    bytes: &[u8], mode: &str, dedupe_angle_deg: f32, max_hole_edges: u32,
+) -> Result<OriData, String> {
     if mode != "hull" && mode != "hull_plus_sphere" {
         return Err(format!("Unknown mode: {mode}"));
     }
@@ -70,6 +81,9 @@ pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> R
     let mut flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
     repair::repair_mesh(&mut flat);
     repair::normalize_winding(&mut flat);
+    if max_hole_edges > 0 {
+        repair::fill_holes(&mut flat, max_hole_edges);
+    }
     let m = mesh::precompute_mesh(&flat);
     if m.triangle_count == 0 {
         return Err("All triangles are degenerate".into());
@@ -121,7 +135,7 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&format!("Invalid config: {e}")));
 
-    let od = prepare_data_native(bytes, &config.mode, config.dedupe_angle_deg)
+    let od = prepare_data_native_with_repair(bytes, &config.mode, config.dedupe_angle_deg, config.max_hole_edges)
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
 
     serde_wasm_bindgen::to_value(&od).unwrap()

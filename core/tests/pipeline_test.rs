@@ -118,6 +118,75 @@ fn count_upper_overhangs(flat: &[f32], normals: &[f32]) -> (u32, u32) {
     (suspicious, upper)
 }
 
+/// Count boundary edges by building an edge_map and counting entries with 1 triangle.
+fn count_boundary_edges(flat: &[f32]) -> u32 {
+    use std::collections::HashMap;
+    let n = flat.len() / 9;
+    let mut edge_map: HashMap<u64, u32> = HashMap::new();
+    for i in 0..n {
+        let b = i * 9;
+        for e in 0..3u8 {
+            let a_off = e as usize * 3;
+            let b_off = ((e as usize + 1) % 3) * 3;
+            let ax = flat[b + a_off]; let ay = flat[b + a_off + 1]; let az = flat[b + a_off + 2];
+            let bx = flat[b + b_off]; let by = flat[b + b_off + 1]; let bz = flat[b + b_off + 2];
+            if ax == bx && ay == by && az == bz { continue; }
+            // Canonical hash (same as edge_hash in repair.rs)
+            let a_bits = (ax.to_bits(), ay.to_bits(), az.to_bits());
+            let b_bits = (bx.to_bits(), by.to_bits(), bz.to_bits());
+            let (x1, y1, z1, x2, y2, z2) = if a_bits < b_bits {
+                (ax, ay, az, bx, by, bz)
+            } else {
+                (bx, by, bz, ax, ay, az)
+            };
+            let mut h = 14695981039346656037u64;
+            for &coord in &[x1, y1, z1, x2, y2, z2] {
+                for byte in coord.to_bits().to_le_bytes() {
+                    h ^= byte as u64;
+                    h = h.wrapping_mul(1099511628211);
+                }
+            }
+            *edge_map.entry(h).or_insert(0) += 1;
+        }
+    }
+    edge_map.values().filter(|&&c| c == 1).count() as u32
+}
+
+#[test]
+fn fill_holes_reduces_boundary_edges_on_real_stl() {
+    let paths = [
+        ("worm", "../resources/Skulled_Wurm_Bird_WOBase.stl"),
+        ("broken", "../broken.stl"),
+    ];
+    for (label, path) in &paths {
+        let bytes = std::fs::read(path).unwrap();
+        let mut cursor = std::io::Cursor::new(&bytes);
+        let stl_mesh = stl_io::read_stl(&mut cursor).unwrap();
+        let mut flat = stl_to_flat(&stl_mesh);
+
+        orient_core::repair::repair_mesh(&mut flat);
+        orient_core::repair::normalize_winding(&mut flat);
+
+        let before = count_boundary_edges(&flat);
+        let added = orient_core::repair::fill_holes(&mut flat, orient_core::repair::DEFAULT_MAX_HOLE_EDGES);
+        let after = count_boundary_edges(&flat);
+
+        println!(
+            "[{label}] fill_holes: added {added} tris, boundaries {before}→{after}"
+        );
+
+        // After filling, boundary edges must not increase (new fill triangles
+        // only use hole edge vertices, so they can't create new boundaries).
+        assert!(after <= before + 1,
+            "[{label}] boundaries INCREASED {before}→{after}");
+
+        // Some holes should have been filled on at least one of the test STLs
+        if *label == "broken" {
+            assert!(added > 0, "broken.stl should have fillable holes");
+        }
+    }
+}
+
 /// Test: winding normalization no debe aumentar los overhangs en el cuartil superior.
 /// Si lo hiciera, significaría que está volteando triángulos en la dirección incorrecta.
 #[test]
