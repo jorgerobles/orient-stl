@@ -45,6 +45,34 @@ pub fn sample_for_hull(vertices: &[[f32; 3]]) -> Vec<[f32; 3]> {
     picked
 }
 
+/// Stride-based triangle decimation for scoring (mirrors web `decimateForScore`).
+/// If triangle count ≤ target, returns originals unchanged.
+pub fn decimate_for_score(
+    positions: &[f32],
+    normals: &[f32],
+    areas: &[f32],
+    target: usize,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let tri_count = normals.len() / 3;
+    if tri_count <= target {
+        return (positions.to_vec(), normals.to_vec(), areas.to_vec());
+    }
+    let step = tri_count / target;
+    let new_count = (tri_count + step - 1) / step;
+    let mut new_pos = Vec::with_capacity(new_count * 9);
+    let mut new_norm = Vec::with_capacity(new_count * 3);
+    let mut new_area = Vec::with_capacity(new_count);
+    for i in 0..new_count {
+        let src = i * step;
+        let src_n = src * 3;
+        let src_p = src * 9;
+        new_norm.extend_from_slice(&normals[src_n..src_n + 3]);
+        new_area.push(areas[src]);
+        new_pos.extend_from_slice(&positions[src_p..src_p + 9]);
+    }
+    (new_pos, new_norm, new_area)
+}
+
 fn find_extremes(vertices: &[[f32; 3]]) -> [usize; 6] {
     let n = vertices.len();
     let mut min_x = 0; let mut max_x = 0;
