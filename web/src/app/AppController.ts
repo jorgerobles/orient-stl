@@ -6,7 +6,7 @@ import type { CandidateList } from '../views/CandidateList';
 import { AppState } from './AppState';
 import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest } from '../types';
 import { defaultConfig } from '../types';
-import { initWasm, loadSTLBytes, prepareData } from '../loadSTL';
+import { initWasm, loadSTLBytes, prepareData, loadWithProgress } from '../loadSTL';
 import { decimateForScore } from '../compute';
 import { applyConvention, inverseConvention } from '../convention';
 import type { LoadConvention } from '../convention';
@@ -55,6 +55,7 @@ export function bboxDiagonalFromPositions(pos: Float32Array): number {
 interface StoredConfig {
   version: number; profile: string; ranker: string;
   criticalAngleDeg: number; convention: string; hullSphere: boolean;
+  autoRepair: boolean;
 }
 
 export class AppController {
@@ -131,6 +132,13 @@ export class AppController {
       if (deps.state.get('liveData')) this.updateLiveScore(deps.viewport.getMeshQuaternion());
     });
 
+    deps.configPanel.onAutoRepair((v) => {
+      const config = deps.state.get('config');
+      config.autoRepair = v;
+      deps.state.set('config', config);
+      this.saveConfig();
+    });
+
     deps.configPanel.onRecalc(() => this.recalculate());
     deps.configPanel.onFind(() => {
       const lod = deps.state.get('lastOriData');
@@ -178,14 +186,17 @@ export class AppController {
       this.lastFileBytes = bytes;
       this.deps.state.set('stlName', file.name);
 
-      this.deps.progressLabel.textContent = 'Parsing STL (WASM)...';
-      await paint();
-      const fullData = this.parseCurrentData();
-      if (!fullData) throw new Error('No triangles or candidates in STL');
+      this.deps.progressBar.className = 'progress-bar-fill determinate';
+      const autoRepair = this.deps.state.get('config').autoRepair;
+      const fullData = await loadWithProgress(bytes, autoRepair, (label, pct) => {
+        this.deps.progressLabel.textContent = label;
+        this.deps.progressBar.style.width = pct + '%';
+      });
+      if (!fullData || fullData.positions.length === 0) throw new Error('No triangles in STL');
 
       this.deps.state.set('lastOriData', fullData);
 
-      this.updateMeshHealth(file.name, fullData.positions);
+      this.updateMeshHealth(file.name, fullData.positions, autoRepair);
 
       this.deps.progressLabel.textContent = 'Rendering model...';
       this.deps.statusEl.textContent = 'Rendering model...';
@@ -207,6 +218,8 @@ export class AppController {
       this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
 
       this.deps.progressContainer.style.display = 'none';
+      this.deps.progressBar.className = 'progress-bar-fill';
+      this.deps.progressBar.style.width = '0%';
       this.deps.statusEl.textContent = 'Drag the rings to rotate. Click "Find Candidates" for suggestions.';
       this.markClean();
       this.deps.candidateList.hide();
@@ -215,6 +228,8 @@ export class AppController {
       this.deps.configPanel.enableRecalc(false);
     } catch (err) {
       this.deps.progressContainer.style.display = 'none';
+      this.deps.progressBar.className = 'progress-bar-fill';
+      this.deps.progressBar.style.width = '0%';
       this.deps.statusEl.textContent = 'Error: ' + err;
       this.hideMeshHealth();
       console.error(err);
@@ -312,7 +327,7 @@ export class AppController {
     }
   }
 
-  private updateMeshHealth(fileName: string, positions: Float32Array): void {
+  private updateMeshHealth(fileName: string, positions: Float32Array, autoRepair?: boolean): void {
     const container = this.healthContainerEl;
     const fileEl = this.healthFileEl;
     const dotEl = this.healthDotEl;
@@ -325,7 +340,7 @@ export class AppController {
     let boundary = 0;
     try {
       boundary = count_boundary_edges_wasm(positions) as number;
-    } catch (err) {
+    } catch {
       dotEl.className = 'health-dot';
       textEl.textContent = '';
       container.style.display = 'flex';
@@ -335,15 +350,18 @@ export class AppController {
     const ratio = triCount > 0 ? boundary / (triCount * 3) : 0;
 
     dotEl.className = 'health-dot';
-    if (boundary === 0) {
+    if (autoRepair && boundary > 0) {
+      dotEl.classList.add('warning');
+      textEl.textContent = `Auto-repair active — ${boundary} open edges remaining after fix`;
+    } else if (boundary === 0) {
       dotEl.classList.add('success');
-      textEl.textContent = 'Watertight';
+      textEl.textContent = '✅ Watertight — ready to orient';
     } else if (ratio < 0.05) {
       dotEl.classList.add('warning');
-      textEl.textContent = `${boundary} boundary edges (${(ratio * 100).toFixed(1)}%)`;
+      textEl.textContent = `⚠️ ${boundary} open edges — consider auto-repair`;
     } else {
       dotEl.classList.add('danger');
-      textEl.textContent = `${boundary} boundary edges (${(ratio * 100).toFixed(1)}%)`;
+      textEl.textContent = `❌ ${boundary} open edges — repair recommended before printing`;
     }
     container.style.display = 'flex';
   }
@@ -416,6 +434,8 @@ export class AppController {
 
   private finishCompute(): void {
     this.deps.progressContainer.style.display = 'none';
+    this.deps.progressBar.className = 'progress-bar-fill';
+    this.deps.progressBar.style.width = '0%';
     this.currentWorker = null;
     this.markClean();
     const candidates = this.deps.state.get('candidates');
@@ -433,6 +453,8 @@ export class AppController {
   cancelCompute(): void {
     if (this.currentWorker) { this.currentWorker.terminate(); this.currentWorker = null; }
     this.deps.progressContainer.style.display = 'none';
+    this.deps.progressBar.className = 'progress-bar-fill';
+    this.deps.progressBar.style.width = '0%';
   }
 
   showCandidate(index: number): void {
@@ -456,6 +478,8 @@ export class AppController {
     if (!data) {
       this.deps.statusEl.textContent = 'No data to recalculate';
       this.deps.progressContainer.style.display = 'none';
+      this.deps.progressBar.className = 'progress-bar-fill';
+      this.deps.progressBar.style.width = '0%';
       return;
     }
     this.deps.state.set('lastOriData', data);
@@ -468,6 +492,8 @@ export class AppController {
       this.spawnCompute(data);
     } else {
       this.deps.progressContainer.style.display = 'none';
+      this.deps.progressBar.className = 'progress-bar-fill';
+      this.deps.progressBar.style.width = '0%';
       this.markClean();
     }
   }
@@ -485,13 +511,15 @@ export class AppController {
   // ── Config Persistence ──
 
   private saveConfig(): void {
+    const config = this.deps.state.get('config');
     const data: StoredConfig = {
       version: SCHEMA_VERSION,
       profile: this.deps.state.get('currentProfile'),
       ranker: this.deps.state.get('currentRanker'),
-      criticalAngleDeg: this.deps.state.get('config').criticalAngleDeg,
+      criticalAngleDeg: config.criticalAngleDeg,
       convention: this.deps.state.get('loadConvention'),
       hullSphere: this.deps.configPanel.getHullSphere(),
+      autoRepair: config.autoRepair,
     };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (err) {
       this.deps.statusEl.textContent = 'Warning: Could not save preferences (storage full or private mode)';
@@ -516,6 +544,9 @@ export class AppController {
       this.deps.configPanel.setConvention((data.convention as LoadConvention) ?? 'z-up');
       this.deps.configPanel.setProfile(data.profile ?? DEFAULT_PROFILE);
       this.deps.configPanel.setRanker(data.ranker ?? DEFAULT_RANKER);
+      config.autoRepair = data.autoRepair ?? false;
+      this.deps.state.set('config', config);
+      this.deps.configPanel.setAutoRepair(config.autoRepair);
       this.deps.viewport.setCriticalAngle(config.criticalAngleDeg);
     } catch (err) {
       localStorage.removeItem(STORAGE_KEY);

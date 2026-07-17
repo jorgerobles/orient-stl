@@ -26,11 +26,13 @@ export class ConfigPanel {
   onRecalcCb: (() => void) | null = null;
   onFindCb: (() => void) | null = null;
   onExportCb: (() => void) | null = null;
+  onAutoRepairCb: ((v: boolean) => void) | null = null;
 
   constructor(
     private angleSlider: HTMLInputElement,
     private angleValue: HTMLElement,
     private hullSphereToggle: HTMLInputElement,
+    private autoRepairToggle: HTMLInputElement,
     private conventionSelect: HTMLSelectElement,
     private profileSelect: HTMLSelectElement,
     private rankerSelect: HTMLSelectElement,
@@ -46,6 +48,7 @@ export class ConfigPanel {
 
     angleSlider.addEventListener('input', () => { this.angleValue.textContent = angleSlider.value; this.onChangeCb?.(); });
     hullSphereToggle.addEventListener('change', () => this.onChangeCb?.());
+    autoRepairToggle.addEventListener('change', () => this.onAutoRepairCb?.(autoRepairToggle.checked));
     conventionSelect.addEventListener('change', () => this.onChangeCb?.());
     profileSelect.addEventListener('change', () => { this._profile = profileSelect.value; this.onChangeCb?.(); });
     rankerSelect.addEventListener('change', () => { this._ranker = rankerSelect.value; this.onChangeCb?.(); });
@@ -58,6 +61,7 @@ export class ConfigPanel {
   onRecalc(cb: () => void): void { this.onRecalcCb = cb; }
   onFind(cb: () => void): void { this.onFindCb = cb; }
   onExport(cb: () => void): void { this.onExportCb = cb; }
+  onAutoRepair(cb: (v: boolean) => void): void { this.onAutoRepairCb = cb; }
 
   getProfile(): string { return this._profile; }
   setProfile(v: string): void { this._profile = v; this.profileSelect.value = v; }
@@ -69,6 +73,8 @@ export class ConfigPanel {
   setConvention(v: LoadConvention): void { this.conventionSelect.value = v; }
   getHullSphere(): boolean { return this.hullSphereToggle.checked; }
   setHullSphere(v: boolean): void { this.hullSphereToggle.checked = v; }
+  getAutoRepair(): boolean { return this.autoRepairToggle.checked; }
+  setAutoRepair(v: boolean): void { this.autoRepairToggle.checked = v; }
 
   enableFind(v: boolean): void { this.findBtn.disabled = !v; }
   enableExport(v: boolean): void { this.exportBtn.disabled = !v; }

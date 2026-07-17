@@ -7,6 +7,7 @@ export interface OrientConfig {
   maxCandidates: number;
   maxHoleEdges: number;
   weldEpsilon: number;
+  autoRepair: boolean;
 }
 
 export function defaultConfig(): OrientConfig {
@@ -19,6 +20,7 @@ export function defaultConfig(): OrientConfig {
     maxCandidates: 20,
     maxHoleEdges: 0,
     weldEpsilon: 0,
+    autoRepair: false,
   };
 }
 

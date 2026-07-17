@@ -38,6 +38,7 @@ function boot(): void {
     document.getElementById('angle-slider') as HTMLInputElement,
     document.getElementById('angle-value')!,
     document.getElementById('hull-sphere-toggle') as HTMLInputElement,
+    document.getElementById('auto-repair-toggle') as HTMLInputElement,
     document.getElementById('convention-select') as HTMLSelectElement,
     document.getElementById('profile-select') as HTMLSelectElement,
     document.getElementById('ranker-select') as HTMLSelectElement,
