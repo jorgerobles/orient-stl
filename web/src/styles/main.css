@@ -403,6 +403,14 @@ h1 {
   background: var(--color-accent);
 }
 
+/* ─── Build Info ─── */
+.build-info {
+  font-size: 0.7rem;
+  color: #666;
+  text-align: center;
+  padding: 0.5rem 0 0;
+}
+
 /* ─── Scrollbar ─── */
 .panel::-webkit-scrollbar {
   width: 6px;
