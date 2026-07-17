@@ -158,6 +158,87 @@ pub fn count_boundary_edges_wasm(positions: &[f32]) -> u32 {
     repair::count_boundary_edges(positions)
 }
 
+// ── Step-by-step WASM pipeline (for progress UI) ──
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn stl_parse_to_positions(bytes: &[u8]) -> Result<Vec<f32>, JsValue> {
+    let triangles = stl::parse_stl(bytes).map_err(|e| JsValue::from_str(&e))?;
+    Ok(triangles.iter().flat_map(|v| v.iter()).copied().collect())
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn repair_mesh_tris(positions: Vec<f32>) -> Vec<f32> {
+    let mut p = positions;
+    repair::repair_mesh(&mut p);
+    p
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn normalize_winding_tris(positions: Vec<f32>) -> Vec<f32> {
+    let mut p = positions;
+    repair::normalize_winding(&mut p);
+    p
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn weld_vertices_tris(positions: Vec<f32>, epsilon: f32) -> Vec<f32> {
+    let mut p = positions;
+    repair::weld_vertices(&mut p, epsilon);
+    p
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn fill_holes_tris(positions: Vec<f32>, max_edges: u32) -> Vec<f32> {
+    let mut p = positions;
+    repair::fill_holes(&mut p, max_edges);
+    p
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn compute_mesh_oridata(positions: &[f32], mode: &str, dedupe_angle_deg: f32) -> Result<JsValue, JsValue> {
+    if mode != "hull" && mode != "hull_plus_sphere" {
+        return Err(JsValue::from_str(&format!("Unknown mode: {mode}")));
+    }
+    let m = mesh::precompute_mesh(positions);
+    if m.triangle_count == 0 {
+        return Err(JsValue::from_str("All triangles are degenerate"));
+    }
+    let hull_verts = decimate::sample_for_hull(&m.vertices);
+    let hull = hull::compute_hull(&hull_verts);
+    if hull.face_normals.is_empty() {
+        return Err(JsValue::from_str("Could not compute convex hull (all vertices coplanar?)"));
+    }
+    let deduped = if mode == "hull_plus_sphere" {
+        let combined = candidates::generate_hull_plus_sphere(&hull, 200, dedupe_angle_deg);
+        candidates::deduplicate_directions(&combined, dedupe_angle_deg)
+    } else {
+        let directions = candidates::generate_candidates(&hull);
+        candidates::deduplicate_directions(&directions, dedupe_angle_deg)
+    };
+    let mut dir_flat = Vec::with_capacity(deduped.len() * 3);
+    for d in &deduped {
+        dir_flat.push(d[0]); dir_flat.push(d[1]); dir_flat.push(d[2]);
+    }
+    let mut normals_flat = Vec::with_capacity(m.normals.len() * 3);
+    for n in &m.normals {
+        normals_flat.push(n[0]); normals_flat.push(n[1]); normals_flat.push(n[2]);
+    }
+    let clean: Vec<f32> = m.vertices.iter().flat_map(|v| v.iter()).copied().collect();
+    let od = OriData {
+        positions: clean,
+        normals: normals_flat,
+        areas: m.areas,
+        directions: dir_flat,
+    };
+    serde_wasm_bindgen::to_value(&od).map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+}
+
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn refine_orientation(

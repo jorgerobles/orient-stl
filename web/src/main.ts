@@ -10,6 +10,8 @@ import { DEFAULT_PROFILE, DEFAULT_RANKER } from './constants';
 import './styles/theme.css';
 import './styles/main.css';
 
+declare const __COMMIT_HASH__: string;
+
 function boot(): void {
   const state = new AppState({
     config: defaultConfig(),
@@ -78,6 +80,8 @@ function boot(): void {
   });
 
   controller.boot();
+  const buildEl = document.getElementById('build-info');
+  if (buildEl) buildEl.textContent = __COMMIT_HASH__;
 }
 
 boot();
