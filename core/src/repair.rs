@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Remove duplicate triangles from a triangle-soup position array.
 /// Returns the number of triangles removed.
@@ -55,6 +55,233 @@ pub fn repair_mesh(positions: &mut Vec<f32>) -> u32 {
     removed
 }
 
+/// Normalize triangle winding by propagating orientation through shared edges.
+/// Builds an edge→triangle map, then BFS across each connected component,
+/// flipping triangles whose edge direction is inconsistent with their neighbor.
+/// After propagation, determines absolute orientation per component via
+/// centroid voting (most faces should point outward).
+/// Returns the number of triangles flipped.
+pub fn normalize_winding(positions: &mut Vec<f32>) -> u32 {
+    let n = positions.len() / 9;
+    if n < 2 {
+        return 0;
+    }
+
+    let mut edge_map: HashMap<u64, Vec<(usize, u8)>> = HashMap::new();
+    for i in 0..n {
+        let base = i * 9;
+        for e in 0..3u8 {
+            let a_off = e as usize * 3;
+            let b_off = ((e as usize + 1) % 3) * 3;
+            let ax = positions[base + a_off];
+            let ay = positions[base + a_off + 1];
+            let az = positions[base + a_off + 2];
+            let bx = positions[base + b_off];
+            let by = positions[base + b_off + 1];
+            let bz = positions[base + b_off + 2];
+            if ax == bx && ay == by && az == bz {
+                continue;
+            }
+            let key = edge_hash(ax, ay, az, bx, by, bz);
+            edge_map.entry(key).or_default().push((i, e));
+        }
+    }
+
+    let mut should_flip = vec![false; n];
+    let mut visited = vec![false; n];
+    // Per-component orientation: collect tris, then vote via centroid
+    let mut components: Vec<Vec<usize>> = Vec::new();
+
+    for seed in 0..n {
+        if visited[seed] {
+            continue;
+        }
+        let mut queue = VecDeque::new();
+        visited[seed] = true;
+        queue.push_back(seed);
+        let mut comp = vec![seed];
+
+        while let Some(tri) = queue.pop_front() {
+            let base = tri * 9;
+            for e in 0..3u8 {
+                let a_off = e as usize * 3;
+                let b_off = ((e as usize + 1) % 3) * 3;
+                let ax = positions[base + a_off];
+                let ay = positions[base + a_off + 1];
+                let az = positions[base + a_off + 2];
+                let bx = positions[base + b_off];
+                let by = positions[base + b_off + 1];
+                let bz = positions[base + b_off + 2];
+                if ax == bx && ay == by && az == bz {
+                    continue;
+                }
+                let key = edge_hash(ax, ay, az, bx, by, bz);
+
+                if let Some(neighbors) = edge_map.get(&key) {
+                    if neighbors.len() != 2 {
+                        continue;
+                    }
+                    let neighbor_entry = neighbors.iter().find(|&&(t, _)| t != tri);
+                    let &(neighbor, n_edge) = match neighbor_entry {
+                        Some(e) => e,
+                        None => continue,
+                    };
+                    if visited[neighbor] {
+                        continue;
+                    }
+
+                    // Edge direction in current triangle (effective, considering flip)
+                    let (tri_sx, tri_sy, tri_sz, tri_ex, tri_ey, tri_ez) =
+                        if should_flip[tri] {
+                            (bx, by, bz, ax, ay, az)
+                        } else {
+                            (ax, ay, az, bx, by, bz)
+                        };
+
+                    // Edge direction in neighbor (effective, considering its flip state)
+                    let n_base = neighbor * 9;
+                    let na_off = n_edge as usize * 3;
+                    let nb_off = ((n_edge as usize + 1) % 3) * 3;
+                    let n_ax = positions[n_base + na_off];
+                    let n_ay = positions[n_base + na_off + 1];
+                    let n_az = positions[n_base + na_off + 2];
+                    let n_bx = positions[n_base + nb_off];
+                    let n_by = positions[n_base + nb_off + 1];
+                    let n_bz = positions[n_base + nb_off + 2];
+
+                    let (n_sx, n_sy, n_sz, n_ex, n_ey, n_ez) = if should_flip[neighbor] {
+                        (n_bx, n_by, n_bz, n_ax, n_ay, n_az)
+                    } else {
+                        (n_ax, n_ay, n_az, n_bx, n_by, n_bz)
+                    };
+
+                    // Consistent if edges run opposite directions:
+                    // tri_start == neighbor_end AND tri_end == neighbor_start
+                    let consistent = tri_sx == n_ex
+                        && tri_sy == n_ey
+                        && tri_sz == n_ez
+                        && tri_ex == n_sx
+                        && tri_ey == n_sy
+                        && tri_ez == n_sz;
+
+                    if !consistent {
+                        should_flip[neighbor] = !should_flip[neighbor];
+                    }
+
+                    visited[neighbor] = true;
+                    queue.push_back(neighbor);
+                    comp.push(neighbor);
+                }
+            }
+        }
+        components.push(comp);
+    }
+
+    // Per-component absolute orientation via centroid voting.
+    // Only for components with >= 4 triangles — below that the centroid
+    // is too close to the surface and gives unreliable results.
+    // BFS already ensures internal consistency within each component.
+    for comp in &components {
+        if comp.len() < 4 {
+            continue;
+        }
+        // Compute component centroid
+        let (mut cx, mut cy, mut cz) = (0.0f64, 0.0f64, 0.0f64);
+        let mut verts = 0u64;
+        for &tri in comp {
+            let base = tri * 9;
+            for j in 0..3 {
+                let voff = j * 3;
+                cx += positions[base + voff] as f64;
+                cy += positions[base + voff + 1] as f64;
+                cz += positions[base + voff + 2] as f64;
+            }
+            verts += 3;
+        }
+        if verts == 0 {
+            continue;
+        }
+        let cx = cx / verts as f64;
+        let cy = cy / verts as f64;
+        let cz = cz / verts as f64;
+
+        let mut outward_votes = 0i64;
+        for &tri in comp {
+            let base = tri * 9;
+            let v1 = [positions[base], positions[base + 1], positions[base + 2]];
+            let v2 = [positions[base + 3], positions[base + 4], positions[base + 5]];
+            let v3 = [positions[base + 6], positions[base + 7], positions[base + 8]];
+            let e1x = v2[0] - v1[0];
+            let e1y = v2[1] - v1[1];
+            let e1z = v2[2] - v1[2];
+            let e2x = v3[0] - v1[0];
+            let e2y = v3[1] - v1[1];
+            let e2z = v3[2] - v1[2];
+            let nx = e1y * e2z - e1z * e2y;
+            let ny = e1z * e2x - e1x * e2z;
+            let nz = e1x * e2y - e1y * e2x;
+            let len_sq = nx * nx + ny * ny + nz * nz;
+            if len_sq <= f32::EPSILON {
+                continue;
+            }
+            let tc_x = (v1[0] + v2[0] + v3[0]) / 3.0;
+            let tc_y = (v1[1] + v2[1] + v3[1]) / 3.0;
+            let tc_z = (v1[2] + v2[2] + v3[2]) / 3.0;
+            let dx = tc_x - cx as f32;
+            let dy = tc_y - cy as f32;
+            let dz = tc_z - cz as f32;
+            let (eff_nx, eff_ny, eff_nz) = if should_flip[tri] {
+                (-nx, -ny, -nz)
+            } else {
+                (nx, ny, nz)
+            };
+            if eff_nx * dx + eff_ny * dy + eff_nz * dz >= 0.0 {
+                outward_votes += 1;
+            } else {
+                outward_votes -= 1;
+            }
+        }
+
+        if outward_votes < 0 {
+            for &tri in comp {
+                should_flip[tri] = !should_flip[tri];
+            }
+        }
+    }
+
+    // Apply flips
+    let mut flipped = 0u32;
+    for i in 0..n {
+        if should_flip[i] {
+            let base = i * 9;
+            positions.swap(base + 3, base + 6);
+            positions.swap(base + 4, base + 7);
+            positions.swap(base + 5, base + 8);
+            flipped += 1;
+        }
+    }
+    flipped
+}
+
+/// Canonical hash for an edge (direction-independent).
+/// Sorts the two vertices by bitwise comparison, then FNV-1a of the 24 bytes.
+fn edge_hash(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32) -> u64 {
+    let a_bits = (ax.to_bits(), ay.to_bits(), az.to_bits());
+    let b_bits = (bx.to_bits(), by.to_bits(), bz.to_bits());
+    let (x1, y1, z1, x2, y2, z2) = if a_bits < b_bits {
+        (ax, ay, az, bx, by, bz)
+    } else {
+        (bx, by, bz, ax, ay, az)
+    };
+    let mut h = 14695981039346656037u64;
+    for &coord in &[x1, y1, z1, x2, y2, z2] {
+        for byte in coord.to_bits().to_le_bytes() {
+            h ^= byte as u64;
+            h = h.wrapping_mul(1099511628211);
+        }
+    }
+    h
+}
 fn hash_tri(tri: &[(f32, f32, f32); 3]) -> u64 {
     // Mix each vertex with FNV-1a-like hashing
     let mut h = 14695981039346656037u64;
@@ -123,5 +350,86 @@ mod tests {
         ];
         assert_eq!(repair_mesh(&mut p), 0);
         assert_eq!(p.len(), 18);
+    }
+
+    // ─── normalize_winding tests (edge-adjacency propagation) ──
+
+    #[test]
+    fn normalize_winding_empty() {
+        let mut p: Vec<f32> = Vec::new();
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_single_triangle() {
+        let mut p = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_two_triangles_consistent() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 0);
+    }
+
+    #[test]
+    fn normalize_winding_two_triangles_inverted() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 1, "Tri B should be flipped");
+        assert!((p[9 + 3] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 4] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 5] - 1.0).abs() < 1e-6);
+        assert!((p[9 + 6] - 1.0).abs() < 1e-6);
+        assert!((p[9 + 7] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 8] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn normalize_winding_thin_shell() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0,
+            0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 1);
+    }
+
+    #[test]
+    fn normalize_winding_chain_propagation() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 4.0, 0.0,
+            0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 4.0, 0.0, 4.0,
+            0.0, 0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 4.0, 4.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 2, "B and C should be flipped");
+    }
+
+    #[test]
+    fn normalize_winding_degenerate_edge_skipped() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        ];
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_disconnected_components() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            10.0, 0.0, 0.0, 11.0, 0.0, 0.0, 10.0, 1.0, 0.0,
+            10.0, 0.0, 0.0, 11.0, 0.0, 0.0, 10.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 2, "Both inverted triangles flipped");
     }
 }
