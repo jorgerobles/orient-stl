@@ -412,11 +412,12 @@ h1 {
 
 /* ─── Build Info ─── */
 .build-info {
-  font-size: 0.7rem;
-  color: #666;
+  font-size: 0.75rem;
+  color: #aaa;
   text-align: center;
-  padding: 0 1.25rem 0.75rem;
   flex-shrink: 0;
+  padding: 0.5rem 1.25rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ─── Scrollbar ─── */
