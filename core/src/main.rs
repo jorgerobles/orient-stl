@@ -35,55 +35,43 @@ struct Args {
     stl: PathBuf,
 
     /// Candidate generation mode: "hull" or "hull_plus_sphere"
-    #[arg(long, default_value = "hull")]
+    #[arg(long, default_value_t = DEFAULT_MODE.to_string())]
     mode: String,
 
-    /// Deduplication angle in degrees
-    #[arg(long, default_value_t = 3.0)]
+    #[arg(long, default_value_t = DEFAULT_DEDUPE_ANGLE)]
     dedupe_angle: f32,
 
-    /// Critical overhang angle in degrees
-    #[arg(long, default_value_t = 30.0)]
+    #[arg(long, default_value_t = DEFAULT_CRITICAL_ANGLE)]
     critical_angle: f32,
 
-    /// Hill-climb refinement iterations (0 = skip)
-    #[arg(long, default_value_t = 50)]
+    #[arg(long, default_value_t = DEFAULT_REFINE_ITERS)]
     refine_iters: u32,
 
-    /// Ranking method: "weights", "consensus", or "topsis"
-    #[arg(long, default_value_t = String::from("weights"))]
+    #[arg(long, default_value_t = DEFAULT_METHOD.to_string())]
     method: String,
 
-    /// Six weights: overhang footprint cross surface height shadowed
-    #[arg(long, default_value = "1.0,1.0,1.0,1.0,1.0,1.0", value_parser = parse_weights)]
+    #[arg(long, default_value = DEFAULT_WEIGHTS, value_parser = parse_weights)]
     weights: [f32; 6],
 
-    /// Maximum candidates in the final diverse subset
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, default_value_t = DEFAULT_MAX_CANDIDATES)]
     max_candidates: usize,
 
-    /// Minimum angle between selected candidates (degrees)
-    #[arg(long, default_value_t = 15.0)]
+    #[arg(long, default_value_t = DEFAULT_MIN_ANGLE)]
     min_angle: f32,
 
-    /// Whether to exclude unstable candidates
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = DEFAULT_EXCLUDE_UNSTABLE)]
     exclude_unstable: bool,
 
-    /// Output JSON path (omit for stdout)
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Score once, then rank with all 8 profiles × 3 rankers (deterministic)
     #[arg(long)]
     all_rankings: bool,
 
-    /// Prepend identity direction [0,-1,0] (as-loaded orientation) to candidates
     #[arg(long)]
     with_identity: bool,
 
-    /// Axis convention: "y-up" or "z-up" (applies swap to mesh before scoring)
-    #[arg(long, default_value_t = String::from("z-up"))]
+    #[arg(long, default_value_t = DEFAULT_CONVENTION.to_string())]
     convention: String,
 
     /// Decimate mesh to N triangles for scoring (0 = no decimation)
@@ -106,6 +94,16 @@ fn parse_weights(s: &str) -> Result<[f32; 6], String> {
 // ---------------------------------------------------------------------------
 
 const DECIMATE_TARGET: usize = 12000;
+const DEFAULT_MODE: &str = "hull";
+const DEFAULT_DEDUPE_ANGLE: f32 = 3.0;
+const DEFAULT_CRITICAL_ANGLE: f32 = 30.0;
+const DEFAULT_REFINE_ITERS: u32 = 50;
+const DEFAULT_METHOD: &str = "weights";
+const DEFAULT_WEIGHTS: &str = "1.0,1.0,1.0,1.0,1.0,1.0";
+const DEFAULT_MAX_CANDIDATES: usize = 20;
+const DEFAULT_MIN_ANGLE: f32 = 15.0;
+const DEFAULT_EXCLUDE_UNSTABLE: bool = true;
+const DEFAULT_CONVENTION: &str = "z-up";
 
 // ---------------------------------------------------------------------------
 // Profile presets (mirrors web/src/profiles/*.json)

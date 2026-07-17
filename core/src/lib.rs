@@ -69,6 +69,7 @@ pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> R
 
     let mut flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
     repair::repair_mesh(&mut flat);
+    repair::normalize_winding(&mut flat);
     let m = mesh::precompute_mesh(&flat);
     if m.triangle_count == 0 {
         return Err("All triangles are degenerate".into());
