@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Phase 7 started — correctness fixes + H11 scoring
-last_updated: "2026-07-14T22:45:00.000Z"
-last_activity: 2026-07-14 -- Phase 7 planned (correctness fixes + H11 scoring)
+stopped_at: Phase 7 wave 2 — repair/decimate landed + winding normalization
+last_updated: "2026-07-15T01:00:00.000Z"
+last_activity: 2026-07-15 -- Wave 2: STL repair, CLI decimation, winding normalization
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 22
-  completed_plans: 17
-  percent: 77
+  total_plans: 23
+  completed_plans: 18
+  percent: 78
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 7 — correctness fixes (refine perturbation, center of mass, dead code) + wire H11 shadowed-overhang into the composite score
+**Current focus:** Phase 7 Wave 2 — STL repair (dedup + winding normalization), CLI decimation, warning cleanups
 
 ## Current Position
 
 Phase: 07 — Correctness Fixes + H11 Scoring (in progress)
-Plan: 0/4 (planned, not started)
+Plan: 1/5 (wave 2 complete — repair, decimate, winding normalize)
 Status: In Progress
-Last activity: 2026-07-14
+Last activity: 2026-07-15
 
 ### Phase 7 status
 
@@ -38,10 +38,12 @@ Last activity: 2026-07-14
 | 07-02 Area-weighted COM + hull param | ⏳ Planned | stability.rs vertex centroid → area-weighted; remove unused hull param |
 | 07-03 Delete dead yaw subgraph | ⏳ Planned | candidates.rs compute_default_yaw + 7-dependents chain (already #[deprecated]) |
 | 07-04 Wire H11 into composite score | ⏳ Planned | shadowed displayed but not scored; breaks WASM API (weights 5→6, bounds 10→12, score_direction 8→9) |
+| 07-05 (wave 2) Repair + decimate + winding | ✅ Complete | O(n) duplicate removal, CLI --decimate (default 12K), winding normalization via centroid heuristic, warning cleanups |
 
 ### Next step
 
 Execute 07-01 (RED test for tangent_perturbation perpendicularity), then 07-02/07-03 in parallel, then 07-04 (serialized — crosses WASM boundary).
+Wave 2 (07-05) is complete — repair pipeline merged, winding normalization landed with tests.
 
 ### Phase 6 status (final)
 
@@ -109,10 +111,14 @@ Recent decisions affecting current work:
 - **[Post-3.5]** Profile-aware `mergeCandidates`: when weights are provided, sorts by weighted composite (min-max normalised) so diversity selection reflects the chosen profile
 - **[Post-3.5]** "Recalculate" button at bottom of config panel; enabled on dirty (profile/angle change), disabled on clean; triggers full recompute with current profile weights
 - **[Post-3.5]** Overlay live score now computes actual direction metrics (overhang/footprint/cross/surface/height) via consensus formula instead of nearest-candidate lookup — shows real score for all 5 axes
+- **[Wave 2]** STL auto-repair (repair_mesh) added: O(n) duplicate triangle removal via position hashing. No vertex welding. No sliver culling (precompute_mesh already filters area ≤ f32::EPSILON).
+- **[Wave 2]** CLI decimation: `--decimate` flag (default 12000) with named constants, matching web's `decimateForScore`. `--decimate 0` disables.
+- **[Wave 2]** All CLI defaults moved to named constants at top of main.rs.
+- **[Wave 2]** Winding normalization (normalize_winding): centroid-heuristic outward normal fix for triangle soup. Runs after dedup. Fixes speckled overhang coloring on STLs with inconsistent winding.
+- **[Wave 2]** Scoring loop confirmed as the real performance bottleneck (O(triangles × candidates × refine)). Not regressed by repair/decimate.
+- **[Wave 2]** Warning cleanups: 6 Rust compiler warnings fixed (unused vars, dead_code, snake_case), merged via dedicated branch.
 
 ### Pending Todos
-
-None active.
 
 ### Blockers/Concerns
 
@@ -130,8 +136,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-14T08:51:31.621Z
-Stopped at: Phase 6 added to roadmap — Frontend Architecture Refactor
+Last session: 2026-07-15T01:00:00.000Z
+Stopped at: Phase 7 wave 2 — repair/decimate/winding landed on master
 Resume file: None
 
 ### Infrastructure State
@@ -140,5 +146,8 @@ Resume file: None
 - WASM binary: `web/pkg/orient_core_bg.wasm` (195KB — all metrics + ranking + selection)
 - TypeScript: `npx tsc --noEmit` passes (38 tests)
 - Build: `npm run build` succeeds
-- Rust: `cargo test` passes (78 unit + 1 integration)
+- Rust: `cargo test` passes (96 unit + 1 integration)
 - TS metric/ranking/selection functions: **0 remaining** (all migrated to Rust WASM)
+- ScorePanel: legends updated to layman-friendly text
+- STL export: `inverseConvention` added to convention.ts, wired into export flow
+- Debug resolved: cli-scoring-pipeline-hang (bottleneck confirmed as scoring loop, not repair)
