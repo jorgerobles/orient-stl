@@ -5,6 +5,8 @@ export interface OrientConfig {
   refineIterations: number;
   excludeUnstable: boolean;
   maxCandidates: number;
+  maxHoleEdges: number;
+  weldEpsilon: number;
 }
 
 export function defaultConfig(): OrientConfig {
@@ -15,6 +17,8 @@ export function defaultConfig(): OrientConfig {
     refineIterations: 50,
     excludeUnstable: true,
     maxCandidates: 20,
+    maxHoleEdges: 0,
+    weldEpsilon: 0,
   };
 }
 

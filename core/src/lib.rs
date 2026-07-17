@@ -39,6 +39,8 @@ struct OrientConfig {
     exclude_unstable: bool,
     #[serde(default = "default_max_hole_edges")]
     max_hole_edges: u32,
+    #[serde(default = "default_weld_epsilon")]
+    weld_epsilon: f32,
 }
 
 fn default_mode() -> String { "hull".to_string() }
@@ -47,6 +49,7 @@ fn default_dedupe_angle() -> f32 { 3.0 }
 fn default_refine() -> u32 { 0 }
 fn default_exclude_unstable() -> bool { true }
 fn default_max_hole_edges() -> u32 { 0 }
+fn default_weld_epsilon() -> f32 { repair::DEFAULT_WELD_EPSILON }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,13 +64,14 @@ pub struct OriData {
 /// the convex hull, generates candidate directions (with optional sphere
 /// blending), and returns the mesh data + flattened directions.
 pub fn prepare_data_native(bytes: &[u8], mode: &str, dedupe_angle_deg: f32) -> Result<OriData, String> {
-    prepare_data_native_with_repair(bytes, mode, dedupe_angle_deg, 0)
+    prepare_data_native_with_repair(bytes, mode, dedupe_angle_deg, 0, 0.0)
 }
 
 /// Native entry point with optional hole filling.
 /// `max_hole_edges`: 0 = skip hole filling, >0 = fill holes with ≤ N edges.
+/// `weld_epsilon`: vertex welding distance (≤ 0 = skip welding).
 pub fn prepare_data_native_with_repair(
-    bytes: &[u8], mode: &str, dedupe_angle_deg: f32, max_hole_edges: u32,
+    bytes: &[u8], mode: &str, dedupe_angle_deg: f32, max_hole_edges: u32, weld_epsilon: f32,
 ) -> Result<OriData, String> {
     if mode != "hull" && mode != "hull_plus_sphere" {
         return Err(format!("Unknown mode: {mode}"));
@@ -81,6 +85,10 @@ pub fn prepare_data_native_with_repair(
     let mut flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
     repair::repair_mesh(&mut flat);
     repair::normalize_winding(&mut flat);
+    if weld_epsilon > 0.0 {
+        repair::weld_vertices(&mut flat, weld_epsilon);
+        repair::repair_mesh(&mut flat);
+    }
     if max_hole_edges > 0 {
         repair::fill_holes(&mut flat, max_hole_edges);
     }
@@ -135,10 +143,19 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
     let config: OrientConfig = serde_wasm_bindgen::from_value(config.clone())
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&format!("Invalid config: {e}")));
 
-    let od = prepare_data_native_with_repair(bytes, &config.mode, config.dedupe_angle_deg, config.max_hole_edges)
+    let od = prepare_data_native_with_repair(bytes, &config.mode, config.dedupe_angle_deg, config.max_hole_edges, config.weld_epsilon)
         .unwrap_or_else(|e| wasm_bindgen::throw_str(&e));
 
     serde_wasm_bindgen::to_value(&od).unwrap()
+}
+
+/// Count boundary edges in a triangle-soup position array.
+/// Returns 0 for a watertight mesh. Called from JS after loading to
+/// show mesh health indicator.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn count_boundary_edges_wasm(positions: &[f32]) -> u32 {
+    repair::count_boundary_edges(positions)
 }
 
 #[cfg(feature = "wasm")]

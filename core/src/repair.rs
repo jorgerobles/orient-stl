@@ -12,6 +12,10 @@ pub const MIN_COMPONENT_VOTE: usize = 4;
 /// Holes larger than this are left as-is (likely intentional openings).
 pub const DEFAULT_MAX_HOLE_EDGES: u32 = 64;
 
+/// Default vertex welding epsilon (absolute, dimensionless).
+/// Vertices within this distance are snapped together.
+pub const DEFAULT_WELD_EPSILON: f32 = 1e-5;
+
 // ---------------------------------------------------------------------------
 
 /// Remove duplicate triangles from a triangle-soup position array.
@@ -688,6 +692,113 @@ pub fn fill_holes(positions: &mut Vec<f32>, max_edges: u32) -> u32 {
     added
 }
 
+/// Weld nearby vertices within `epsilon` distance.
+///
+/// Replaces each vertex with the first-encountered nearby vertex's coordinates.
+/// After welding, call `repair_mesh()` to remove degenerate triangles
+/// (triangles with two or more vertices at the same location).
+///
+/// Uses a spatial hash (grid cell size = epsilon) for O(n * 27) lookup.
+/// Returns the number of vertex slots modified (3 per triangle, not unique
+/// vertices).
+pub fn weld_vertices(positions: &mut Vec<f32>, epsilon: f32) -> u32 {
+    let tri_count = positions.len() / 9;
+    if tri_count == 0 || epsilon <= 0.0 {
+        return 0;
+    }
+
+    let eps_sq = epsilon * epsilon;
+    let inv_eps = epsilon.recip();
+    // grid cell key → canonical [x, y, z]
+    let mut grid: HashMap<(i64, i64, i64), [f32; 3]> = HashMap::new();
+    let mut welded = 0u32;
+
+    for tri in 0..tri_count {
+        let base = tri * 9;
+        for slot in 0..3 {
+            let off = slot * 3;
+            let v = [
+                positions[base + off],
+                positions[base + off + 1],
+                positions[base + off + 2],
+            ];
+
+            // Check for NaN / Inf — can't weld those
+            if !v[0].is_finite() || !v[1].is_finite() || !v[2].is_finite() {
+                continue;
+            }
+
+            let key = (
+                (v[0] * inv_eps).floor() as i64,
+                (v[1] * inv_eps).floor() as i64,
+                (v[2] * inv_eps).floor() as i64,
+            );
+
+            // Search this cell and all 26 neighbours
+            let mut canonical: Option<[f32; 3]> = None;
+            'cells: for dx in -1i64..=1 {
+                for dy in -1i64..=1 {
+                    for dz in -1i64..=1 {
+                        let nk = (key.0.wrapping_add(dx), key.1.wrapping_add(dy), key.2.wrapping_add(dz));
+                        if let Some(&cv) = grid.get(&nk) {
+                            let d2 = (v[0] - cv[0]) * (v[0] - cv[0])
+                                + (v[1] - cv[1]) * (v[1] - cv[1])
+                                + (v[2] - cv[2]) * (v[2] - cv[2]);
+                            if d2 <= eps_sq {
+                                canonical = Some(cv);
+                                break 'cells;
+                            }
+                        }
+                    }
+                }
+            }
+
+            match canonical {
+                Some(cv) => {
+                    positions[base + off] = cv[0];
+                    positions[base + off + 1] = cv[1];
+                    positions[base + off + 2] = cv[2];
+                    welded += 1;
+                }
+                None => {
+                    grid.insert(key, v);
+                }
+            }
+        }
+    }
+
+    welded
+}
+
+/// Count the number of boundary edges (edges shared by exactly 1 triangle)
+/// in a triangle-soup position array. A watertight mesh has 0 boundary edges.
+pub fn count_boundary_edges(positions: &[f32]) -> u32 {
+    let n = positions.len() / 9;
+    if n == 0 {
+        return 0;
+    }
+    let mut edge_map: HashMap<u64, Vec<(usize, u8)>> = HashMap::new();
+    for i in 0..n {
+        let base = i * 9;
+        for e in 0..3u8 {
+            let a_off = e as usize * 3;
+            let b_off = ((e as usize + 1) % 3) * 3;
+            let ax = positions[base + a_off];
+            let ay = positions[base + a_off + 1];
+            let az = positions[base + a_off + 2];
+            let bx = positions[base + b_off];
+            let by = positions[base + b_off + 1];
+            let bz = positions[base + b_off + 2];
+            if ax == bx && ay == by && az == bz {
+                continue;
+            }
+            let key = edge_hash(ax, ay, az, bx, by, bz);
+            edge_map.entry(key).or_default().push((i, e));
+        }
+    }
+    edge_map.values().filter(|v| v.len() == 1).count() as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -899,6 +1010,103 @@ mod tests {
         let added = fill_holes(&mut p, 64);
         // Outer perimeter is a 4-edge hole → 2 triangles
         assert_eq!(added, 2);
+    }
+
+    // ─── weld_vertices tests ────────────────────────────
+
+    #[test]
+    fn weld_empty_mesh() {
+        let mut p = Vec::new();
+        assert_eq!(weld_vertices(&mut p, 1e-5), 0);
+    }
+
+    #[test]
+    fn weld_zero_epsilon_no_op() {
+        let mut p = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        assert_eq!(weld_vertices(&mut p, 0.0), 0);
+        assert_eq!(p.len(), 9);
+    }
+
+    #[test]
+    fn weld_exact_vertices_no_change() {
+        let orig = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut p = orig.clone();
+        let welded = weld_vertices(&mut p, 1e-5);
+        // (0,0,0) appears twice and (1,0,0) appears twice → 2 welded
+        assert_eq!(welded, 2);
+        assert_eq!(p, orig); // no coordinates changed, just matched
+    }
+
+    #[test]
+    fn weld_nearby_vertices_snapped() {
+        let mut p = vec![
+            // tri 0: one vertex at origin
+            0.0, 0.0, 0.0,   1.0, 0.0, 0.0,   0.0, 1.0, 0.0,
+            // tri 1: first vertex at near-origin (1e-6 away)
+            1e-6, 0.0, 0.0,  1.0, 1.0, 0.0,   0.0, 0.0, 1.0,
+        ];
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert_eq!(welded, 1, "near-origin vertex should snap to origin");
+        assert_eq!(p[9], 0.0, "v3.x should be 0 after weld");
+        assert_eq!(p[10], 0.0, "v3.y should be 0 after weld");
+        assert_eq!(p[11], 0.0, "v3.z should be 0 after weld");
+    }
+
+    #[test]
+    fn weld_far_vertices_unchanged() {
+        let orig = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            2.0, 0.0, 0.0, 3.0, 0.0, 0.0, 2.0, 1.0, 0.0,
+        ];
+        let mut p = orig.clone();
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert_eq!(welded, 0);
+        assert_eq!(p, orig);
+    }
+
+    #[test]
+    fn weld_merges_boundary_edges() {
+        // Two quads sharing an edge but with slightly-offset shared vertices.
+        // Quad A: (0,0,0)-(2,0,0)-(2,2,0)-(0,2,0) → 2 tris
+        // Quad B: (2,0,0)-(4,0,0)-(4,2,0)-(2,2,0) → 2 tris
+        // Shared edge vertices offset by 1e-6
+        let mut p = vec![
+            // Quad A
+            0.0, 0.0, 0.0,  2.0, 0.0, 0.0,  2.0, 2.0, 0.0,
+            0.0, 0.0, 0.0,  2.0, 2.0, 0.0,  0.0, 2.0, 0.0,
+            // Quad B (shared vertices at (2,0,0) and (2,2,0) offset by +1e-6)
+            2.0+1e-6, 0.0, 0.0,  4.0, 0.0, 0.0,  4.0, 2.0, 0.0,
+            2.0+1e-6, 0.0, 0.0,  4.0, 2.0, 0.0,  2.0+1e-6, 2.0, 0.0,
+        ];
+        let before = count_boundary_edges_r(&p);
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert!(welded > 0, "should weld shared-edge vertices");
+        repair_mesh(&mut p); // no degenerates expected
+        let after = count_boundary_edges_r(&p);
+        assert!(after < before, "welding should reduce boundary edges: {before}→{after}");
+    }
+
+    /// Boundary edge counter for testing (exact, uses same edge_hash as fill_holes).
+    fn count_boundary_edges_r(positions: &[f32]) -> usize {
+        use std::collections::HashMap;
+        let n = positions.len() / 9;
+        let mut edge_map: HashMap<u64, Vec<(usize, u8)>> = HashMap::new();
+        for i in 0..n {
+            let base = i * 9;
+            for e in 0..3u8 {
+                let a_off = e as usize * 3;
+                let b_off = ((e as usize + 1) % 3) * 3;
+                let (ax, ay, az) = (positions[base + a_off], positions[base + a_off + 1], positions[base + a_off + 2]);
+                let (bx, by, bz) = (positions[base + b_off], positions[base + b_off + 1], positions[base + b_off + 2]);
+                if ax == bx && ay == by && az == bz { continue; }
+                let key = edge_hash(ax, ay, az, bx, by, bz);
+                edge_map.entry(key).or_default().push((i, e));
+            }
+        }
+        edge_map.values().filter(|v| v.len() == 1).count()
     }
 
     #[test]
