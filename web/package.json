@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:wasm": "wasm-pack build ../core --target bundler --out-dir ./pkg",
+    "build:wasm": "wasm-pack build ../core --target bundler --out-dir ../web/pkg",
     "rebuild": "npm run build:wasm && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",

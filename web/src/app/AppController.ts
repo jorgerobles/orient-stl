@@ -11,7 +11,7 @@ import { decimateForScore } from '../compute';
 import { applyConvention, inverseConvention } from '../convention';
 import type { LoadConvention } from '../convention';
 import { dirFromQuat } from '../quaternion';
-import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds } from '../../pkg/orient_core.js';
+import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds, count_boundary_edges_wasm } from '../../pkg/orient_core.js';
 import { WEIGHT_PRESETS } from '../profiles';
 import { exportSTL } from '../exportSTL';
 import { rotatePositions } from '../rotate';
@@ -62,12 +62,41 @@ export class AppController {
   private lastFileBytes: Uint8Array | null = null;
   private currentWorker: Worker | null = null;
   private _liveRegionEl: HTMLElement | null = null;
+  private _healthContainerEl: HTMLElement | null = null;
+  private _healthFileEl: HTMLElement | null = null;
+  private _healthDotEl: HTMLElement | null = null;
+  private _healthTextEl: HTMLElement | null = null;
 
   private get liveRegionEl(): HTMLElement | null {
     if (!this._liveRegionEl) {
       this._liveRegionEl = document.getElementById("status-live");
     }
     return this._liveRegionEl;
+  }
+
+  private get healthContainerEl(): HTMLElement | null {
+    if (!this._healthContainerEl) {
+      this._healthContainerEl = document.getElementById("mesh-health");
+    }
+    return this._healthContainerEl;
+  }
+  private get healthFileEl(): HTMLElement | null {
+    if (!this._healthFileEl) {
+      this._healthFileEl = document.getElementById("health-file");
+    }
+    return this._healthFileEl;
+  }
+  private get healthDotEl(): HTMLElement | null {
+    if (!this._healthDotEl) {
+      this._healthDotEl = document.getElementById("health-dot");
+    }
+    return this._healthDotEl;
+  }
+  private get healthTextEl(): HTMLElement | null {
+    if (!this._healthTextEl) {
+      this._healthTextEl = document.getElementById("health-text");
+    }
+    return this._healthTextEl;
   }
 
   constructor(private deps: AppControllerDeps) {
@@ -140,6 +169,7 @@ export class AppController {
       this.deps.statusEl.textContent = 'Please select a .stl file';
       return;
     }
+    this.hideMeshHealth();
     this.deps.progressContainer.style.display = 'block';
     this.deps.progressLabel.textContent = 'Reading file...';
     this.deps.progressBar.className = 'progress-bar-fill indeterminate';
@@ -154,6 +184,8 @@ export class AppController {
       if (!fullData) throw new Error('No triangles or candidates in STL');
 
       this.deps.state.set('lastOriData', fullData);
+
+      this.updateMeshHealth(file.name, fullData.positions);
 
       this.deps.progressLabel.textContent = 'Rendering model...';
       this.deps.statusEl.textContent = 'Rendering model...';
@@ -184,6 +216,7 @@ export class AppController {
     } catch (err) {
       this.deps.progressContainer.style.display = 'none';
       this.deps.statusEl.textContent = 'Error: ' + err;
+      this.hideMeshHealth();
       console.error(err);
     }
   }
@@ -277,6 +310,47 @@ export class AppController {
     if (this.liveRegionEl) {
       this.liveRegionEl.textContent = `Orientation score ${pct}%, Profile: ${profileLabel}`;
     }
+  }
+
+  private updateMeshHealth(fileName: string, positions: Float32Array): void {
+    const container = this.healthContainerEl;
+    const fileEl = this.healthFileEl;
+    const dotEl = this.healthDotEl;
+    const textEl = this.healthTextEl;
+    if (!container || !fileEl || !dotEl || !textEl) return;
+
+    fileEl.textContent = fileName;
+
+    const triCount = positions.length / 9;
+    let boundary = 0;
+    try {
+      boundary = count_boundary_edges_wasm(positions) as number;
+    } catch (err) {
+      dotEl.className = 'health-dot';
+      textEl.textContent = '';
+      container.style.display = 'flex';
+      return;
+    }
+
+    const ratio = triCount > 0 ? boundary / (triCount * 3) : 0;
+
+    dotEl.className = 'health-dot';
+    if (boundary === 0) {
+      dotEl.classList.add('success');
+      textEl.textContent = 'Watertight';
+    } else if (ratio < 0.05) {
+      dotEl.classList.add('warning');
+      textEl.textContent = `${boundary} boundary edges (${(ratio * 100).toFixed(1)}%)`;
+    } else {
+      dotEl.classList.add('danger');
+      textEl.textContent = `${boundary} boundary edges (${(ratio * 100).toFixed(1)}%)`;
+    }
+    container.style.display = 'flex';
+  }
+
+  private hideMeshHealth(): void {
+    const container = this.healthContainerEl;
+    if (container) container.style.display = 'none';
   }
 
   private async spawnCompute(data: OriData): Promise<void> {

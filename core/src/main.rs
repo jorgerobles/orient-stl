@@ -22,7 +22,7 @@ use orient_core::selection;
 use orient_core::stability;
 use orient_core::yaw;
 use orient_core::{normalise_dir, prepare_data_native_with_repair, reconstruct_mesh};
-use orient_core::repair::DEFAULT_MAX_HOLE_EDGES;
+use orient_core::repair::{DEFAULT_MAX_HOLE_EDGES, DEFAULT_WELD_EPSILON};
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -83,6 +83,11 @@ struct Args {
     /// Uses ear-clipping triangulation on 3D boundary loops.
     #[arg(long, default_value_t = DEFAULT_MAX_HOLE_EDGES)]
     fix_edges: u32,
+
+    /// Vertex welding distance (0 = skip welding).
+    /// Welds nearby vertices before hole-filling to close float-precision gaps.
+    #[arg(long, default_value_t = DEFAULT_WELD_EPSILON)]
+    weld_epsilon: f32,
 }
 
 fn parse_weights(s: &str) -> Result<[f32; 6], String> {
@@ -219,7 +224,7 @@ fn main() -> Result<(), String> {
     let bytes = std::fs::read(&args.stl).map_err(|e| format!("Cannot read {}: {e}", args.stl.display()))?;
 
     // 2. Parse, precompute, generate candidates
-    let mut od = prepare_data_native_with_repair(&bytes, &args.mode, args.dedupe_angle, args.fix_edges)?;
+    let mut od = prepare_data_native_with_repair(&bytes, &args.mode, args.dedupe_angle, args.fix_edges, args.weld_epsilon)?;
 
     // Apply axis convention (z-up → y-up swap)
     if args.convention == "z-up" {

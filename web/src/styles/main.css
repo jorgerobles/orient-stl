@@ -118,6 +118,41 @@ h1 {
   background: var(--color-accent-hover);
 }
 
+/* ─── Mesh Health Indicator ─── */
+.mesh-health {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.85rem;
+  font-size: 0.78rem;
+}
+.health-file {
+  color: var(--color-text-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-dim);
+}
+.health-dot.success { background: var(--color-success); }
+.health-dot.warning { background: var(--color-warning); }
+.health-dot.danger  { background: var(--color-danger); }
+.health-text {
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
 /* ─── Config Panel ─── */
 .config-panel {
   background: rgba(255, 255, 255, 0.04);
