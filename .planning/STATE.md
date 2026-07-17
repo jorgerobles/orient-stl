@@ -9,9 +9,9 @@ last_activity: 2026-07-15 -- Wave 2: STL repair, CLI decimation, winding normali
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 23
-  completed_plans: 18
-  percent: 78
+  total_plans: 24
+  completed_plans: 17
+  percent: 71
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 7 Wave 2 — STL repair (dedup + winding normalization), CLI decimation, warning cleanups
+**Current focus:** Phase 7 Wave 2 — STL repair, CLI decimation, warning cleanups + winding normalization (WIP on winding-propagation branch)
 
 ## Current Position
 
 Phase: 07 — Correctness Fixes + H11 Scoring (in progress)
-Plan: 1/5 (wave 2 complete — repair, decimate, winding normalize)
+Plan: 1/5 (wave 2: repair + decimate merged; winding WIP on branch)
 Status: In Progress
-Last activity: 2026-07-15
+Last activity: 2026-07-17
 
 ### Phase 7 status
 
@@ -38,12 +38,12 @@ Last activity: 2026-07-15
 | 07-02 Area-weighted COM + hull param | ⏳ Planned | stability.rs vertex centroid → area-weighted; remove unused hull param |
 | 07-03 Delete dead yaw subgraph | ⏳ Planned | candidates.rs compute_default_yaw + 7-dependents chain (already #[deprecated]) |
 | 07-04 Wire H11 into composite score | ⏳ Planned | shadowed displayed but not scored; breaks WASM API (weights 5→6, bounds 10→12, score_direction 8→9) |
-| 07-05 (wave 2) Repair + decimate + winding | ✅ Complete | O(n) duplicate removal, CLI --decimate (default 12K), winding normalization via centroid heuristic, warning cleanups |
+| 07-05 Repair + decimate | ✅ Complete | O(n) duplicate removal, CLI --decimate (default 12K), warning cleanups, constants refactor |
+| 07-06 Winding normalization | 🚧 Branch winding-propagation | Edge-adjacency propagation, not centroid heuristic |
 
 ### Next step
 
-Execute 07-01 (RED test for tangent_perturbation perpendicularity), then 07-02/07-03 in parallel, then 07-04 (serialized — crosses WASM boundary).
-Wave 2 (07-05) is complete — repair pipeline merged, winding normalization landed with tests.
+Execute 07-06 on `winding-propagation` branch (edge-adjacency winding normalization), then re-evaluate speckled red on broken.stl.
 
 ### Phase 6 status (final)
 
@@ -114,7 +114,6 @@ Recent decisions affecting current work:
 - **[Wave 2]** STL auto-repair (repair_mesh) added: O(n) duplicate triangle removal via position hashing. No vertex welding. No sliver culling (precompute_mesh already filters area ≤ f32::EPSILON).
 - **[Wave 2]** CLI decimation: `--decimate` flag (default 12000) with named constants, matching web's `decimateForScore`. `--decimate 0` disables.
 - **[Wave 2]** All CLI defaults moved to named constants at top of main.rs.
-- **[Wave 2]** Winding normalization (normalize_winding): centroid-heuristic outward normal fix for triangle soup. Runs after dedup. Fixes speckled overhang coloring on STLs with inconsistent winding.
 - **[Wave 2]** Scoring loop confirmed as the real performance bottleneck (O(triangles × candidates × refine)). Not regressed by repair/decimate.
 - **[Wave 2]** Warning cleanups: 6 Rust compiler warnings fixed (unused vars, dead_code, snake_case), merged via dedicated branch.
 
