@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use orient_core::decimate::sample_for_hull;
+use orient_core::decimate::{decimate_for_score, sample_for_hull};
 use orient_core::hull;
 use orient_core::mesh::MeshData;
 use orient_core::ranking::{CandidateMetrics, ScoreWeights, rank_by_consensus, rank_by_topsis, rank_by_weights, to_display_score};
@@ -85,6 +85,10 @@ struct Args {
     /// Axis convention: "y-up" or "z-up" (applies swap to mesh before scoring)
     #[arg(long, default_value_t = String::from("z-up"))]
     convention: String,
+
+    /// Decimate mesh to N triangles for scoring (0 = no decimation)
+    #[arg(long, default_value_t = DECIMATE_TARGET)]
+    decimate: usize,
 }
 
 fn parse_weights(s: &str) -> Result<[f32; 6], String> {
@@ -96,6 +100,12 @@ fn parse_weights(s: &str) -> Result<[f32; 6], String> {
     out.copy_from_slice(&v);
     Ok(out)
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DECIMATE_TARGET: usize = 12000;
 
 // ---------------------------------------------------------------------------
 // Profile presets (mirrors web/src/profiles/*.json)
@@ -227,7 +237,9 @@ fn main() -> Result<(), String> {
         }
     }
 
-    let mesh = reconstruct_mesh(&od.positions, &od.normals, &od.areas);
+    let target = if args.decimate == 0 { od.normals.len() / 3 } else { args.decimate };
+    let (dec_pos, dec_norm, dec_area) = decimate_for_score(&od.positions, &od.normals, &od.areas, target);
+    let mesh = reconstruct_mesh(&dec_pos, &dec_norm, &dec_area);
 
     // 3. Hull (needed for stability)
     let hull_verts = sample_for_hull(&mesh.vertices);
