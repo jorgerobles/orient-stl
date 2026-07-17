@@ -39,8 +39,6 @@ body {
   position: fixed;
   z-index: 10;
   background: var(--color-panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: var(--border-subtle);
   border-radius: var(--radius);
   color: #ddd;
@@ -343,6 +341,10 @@ h1 {
 
 /* ─── Progress ─── */
 .progress-container {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem;
   margin-bottom: 0.75rem;
 }
 .progress-bar-bg {
@@ -375,7 +377,6 @@ h1 {
 .progress-bar-fill.indeterminate {
   width: 35% !important;
   animation: indeterminate 1.2s ease-in-out infinite;
-  will-change: transform;
 }
 .progress-segments {
   display: flex;

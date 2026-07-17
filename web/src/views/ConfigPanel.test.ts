@@ -55,7 +55,7 @@ describe("ConfigPanel", () => {
     const recalcBtn = mockButton();
 
     const panel = new ConfigPanel(
-      angleSlider, angleValue, hullSphereToggle,
+      angleSlider, angleValue, hullSphereToggle, mockInput(),
       conventionSelect, profileSelect, rankerSelect,
       findBtn, exportBtn, recalcBtn,
     );
@@ -71,7 +71,7 @@ describe("ConfigPanel", () => {
 
   it("getProfile and setProfile round-trip correctly", () => {
     const panel = new ConfigPanel(
-      mockInput(), mockSpan(), mockInput(),
+      mockInput(), mockSpan(), mockInput(), mockInput(),
       mockSelect(), mockSelect(), mockSelect(),
       mockButton(), mockButton(), mockButton(),
     );
@@ -84,7 +84,7 @@ describe("ConfigPanel", () => {
     const angleSlider = mockInput();
     const angleValue = mockSpan();
     const panel = new ConfigPanel(
-      angleSlider, angleValue, mockInput(),
+      angleSlider, angleValue, mockInput(), mockInput(),
       mockSelect(), mockSelect(), mockSelect(),
       mockButton(), mockButton(), mockButton(),
     );

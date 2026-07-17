@@ -61,6 +61,7 @@ function createMockDeps(): AppControllerDeps {
       onRecalc: vi.fn((cb: () => void) => { onRecalcCb = cb; }),
       onFind: vi.fn((cb: () => void) => { onFindCb = cb; }),
       onExport: vi.fn((cb: () => void) => { onExportCb = cb; }),
+      onAutoRepair: vi.fn(),
       getProfile: vi.fn(() => "resin-biased"),
       setProfile: vi.fn(),
       getRanker: vi.fn(() => "consensus"),
