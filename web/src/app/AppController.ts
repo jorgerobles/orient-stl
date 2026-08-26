@@ -194,6 +194,12 @@ export class AppController {
       });
       if (!fullData || fullData.positions.length === 0) throw new Error('No triangles in STL');
 
+      const conv = this.deps.state.get('loadConvention');
+      fullData.positions = applyConvention(fullData.positions, conv);
+      fullData.normals = applyConvention(fullData.normals, conv);
+      fullData.areas = applyConvention(fullData.areas, conv);
+      fullData.directions = applyConvention(fullData.directions, conv);
+
       this.deps.state.set('lastOriData', fullData);
 
       this.updateMeshHealth(file.name, fullData.positions, autoRepair);
@@ -269,7 +275,7 @@ export class AppController {
     }
   }
 
-  private updateLiveScore(q: [number, number, number, number]): void {
+  private updateLiveScore(q: [number, number, number, number], overrideScore?: number): void {
     const liveData = this.deps.state.get('liveData');
     const normBounds = this.deps.state.get('normBounds');
     if (!liveData || !normBounds) return;
@@ -312,7 +318,7 @@ export class AppController {
       score = wSum > 0 ? 1 - costs.reduce((acc, c, i) => acc + weights[i] * c, 0) / wSum : 1 - costs[0];
     }
     this.deps.scorePanel.update({
-      score,
+      score: overrideScore ?? score,
       costs,
       weights,
       profileLabel: PROFILE_LABELS[profile] ?? profile,
@@ -321,7 +327,7 @@ export class AppController {
     });
 
     const profileLabel = PROFILE_LABELS[profile] ?? profile;
-    const pct = (score * 100).toFixed(0);
+    const pct = ((overrideScore ?? score) * 100).toFixed(0);
     if (this.liveRegionEl) {
       this.liveRegionEl.textContent = `Orientation score ${pct}%, Profile: ${profileLabel}`;
     }
@@ -464,7 +470,7 @@ export class AppController {
     this.deps.state.set('currentIndex', index);
     this.deps.viewport.setCriticalAngle(this.deps.state.get('config').criticalAngleDeg);
     this.deps.viewport.showCandidate(candidates[index].quaternion);
-    this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
+    this.updateLiveScore(this.deps.viewport.getMeshQuaternion(), candidates[index].compositeScore);
     this.deps.candidateList.render(candidates, index);
   }
 

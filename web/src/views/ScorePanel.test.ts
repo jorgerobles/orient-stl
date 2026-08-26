@@ -46,13 +46,13 @@ describe("ScorePanel", () => {
     expect(spProfile.textContent).toBe("Balanced");
     expect(spRanker.textContent).toBe("TOPSIS");
     expect(spHint.textContent).toBe("TOPSIS explanation");
-    // Should render 6 metric bar rows (Supports, Bed Space, Layer Width, Finish, Height Risk, Hard-to-Reach)
+    // Should render 6 metric bar rows (Supports, Bed Space, Layer Width, Finish, Height Risk, Reachability)
     const html = spRows.innerHTML as string;
     expect(html).toContain("Supports");
     expect(html).toContain("Bed Space");
     expect(html).toContain("Layer Width");
     expect(html).toContain("Finish");
     expect(html).toContain("Height");
-    expect(html).toContain("Hard-to-Reach");
+    expect(html).toContain("Reachability");
   });
 });
