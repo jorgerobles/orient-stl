@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orient STL — Resin Printing Orientation Tool</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <script type="module" crossorigin src="/orient-stl/assets/index-ciPEOFjz.js"></script>
+  <link rel="stylesheet" crossorigin href="/orient-stl/assets/index-BGFxnD7A.css">
+</head>
+<body>
+  <main>
+    <section id="viewport" role="application" aria-label="3D model viewport — drag rings to rotate, or use arrow keys" tabindex="0"></section>
+    <aside id="status-live" aria-live="polite" class="sr-only"></aside>
+  </main>
+
+  <!-- Left panel: file + config -->
+  <aside class="panel panel-left" id="panel-left" aria-label="File and configuration">
+    <div class="panel-left-content">
+      <header>
+        <h1>Orient STL</h1>
+        <p class="subtitle">Resin printing orientation tool</p>
+      </header>
+
+      <div id="status" class="status">Initializing...</div>
+
+      <div id="drop-zone" class="drop-zone">
+        <p>Drag &amp; drop an STL file here</p>
+        <p>or</p>
+        <label class="file-label">
+          <input type="file" id="file-input" accept=".stl" hidden />
+          <span class="button">Choose File</span>
+        </label>
+      </div>
+
+      <div id="mesh-health" class="mesh-health" style="display:none">
+        <span id="health-file" class="health-file"></span>
+        <span id="health-dot" class="health-dot" aria-hidden="true"></span>
+        <span id="health-text" class="health-text"></span>
+      </div>
+
+      <div class="config-panel">
+        <h3>Configuration</h3>
+        <label>
+          STL axis:
+          <select id="convention-select">
+            <option value="z-up" selected>Z-up</option>
+            <option value="y-up">Y-up</option>
+          </select>
+        </label>
+        <p class="hint">How the file was authored. CAD = Z-up; Blender/three.js = Y-up.</p>
+        <label>
+          Critical Angle: <span id="angle-value">30</span>&deg;
+          <input type="range" id="angle-slider" min="20" max="50" value="30" step="1" />
+        </label>
+        <p class="hint">Faces steeper than this contribute to overhang penalty.</p>
+        <label class="config-checkbox">
+          <input type="checkbox" id="hull-sphere-toggle" />
+          Hull+Sphere Mode
+        </label>
+        <p class="hint">Include ~200 Fibonacci-sphere candidates.</p>
+        <label class="config-checkbox">
+          <input type="checkbox" id="auto-repair-toggle" />
+          Auto-repair
+        </label>
+        <p class="hint">Fix holes and weld nearby vertices. Use for broken or scanned STLs.</p>
+        <label>
+          Optimize for:
+          <select id="profile-select">
+            <option value="resin-biased" selected>Resin Printing</option>
+          </select>
+        </label>
+        <p class="hint">Which print quality aspect to prioritize. Controls how overhang, surface finish, print time, and strength are weighted.</p>
+        <label>
+          Ranker:
+          <select id="ranker-select">
+            <option value="consensus" selected>consensus (minimax)</option>
+            <option value="weights">weighted sum</option>
+            <option value="topsis">TOPSIS</option>
+          </select>
+        </label>
+        <p class="hint">How candidates are ranked. Consensus = each metric has equal veto; Weighted sum = combines weighted metrics; TOPSIS = distance-based MCDA.</p>
+        <div style="display:flex;gap:0.4rem;margin-top:0.6rem">
+          <button id="find-btn" class="button button-sm" style="flex:1" disabled>Find Candidates</button>
+          <button id="export-btn" class="button button-sm button-success" style="flex:1" disabled>Export STL</button>
+        </div>
+        <button id="recalc-btn" class="button button-sm" style="width:100%;margin-top:0.4rem" disabled>Recalculate</button>
+      </div>
+
+      <div id="progress-container" class="progress-container" style="display:none">
+        <div class="progress-bar-bg">
+          <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <div class="progress-row">
+          <span id="progress-label">Computing candidates...</span>
+          <button id="cancel-btn" class="button button-sm button-danger">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="build-info" id="build-info"></div>
+  </aside>
+
+  <!-- Right panel: score breakdown + candidates -->
+  <aside class="panel panel-right" id="results" aria-label="Score and candidates">
+    <div id="score-section">
+      <div class="score-top">
+        <span class="score-big" id="score-big">—</span>
+        <span class="score-label">overall</span>
+      </div>
+      <div class="sp-meta">
+        <span>Profile: <b id="sp-profile">—</b></span>
+        <span>Method: <b id="sp-ranker">—</b></span>
+      </div>
+      <div id="sp-rows"></div>
+      <div class="sp-hint" id="sp-hint"></div>
+    </div>
+    <div id="candidates-section" style="display:none">
+      <h3>Candidates</h3>
+      <ol id="candidate-list"></ol>
+    </div>
+    <p class="results-placeholder" id="results-placeholder">Load an STL to see scores.</p>
+  </aside>
+
+</body>
+</html>
