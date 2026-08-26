@@ -43,7 +43,7 @@ export async function loadWithProgress(
   if (!wasmReady) throw new Error('WASM not initialized');
 
   const weldEpsilon = 1e-5;
-  const maxHoleEdges = 64;
+  const maxHoleEdges = 512;
 
   performance.mark('load-start');
 

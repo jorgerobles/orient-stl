@@ -420,7 +420,8 @@ export class AppController {
       }
     };
     worker.onerror = (err) => {
-      console.error('Worker error:', err);
+      console.error('Worker error:', err.message || err);
+      this.deps.statusEl.textContent = 'Compute error: ' + (err.message || 'unknown');
       this.finishCompute();
     };
     const nb = this.deps.state.get('normBounds');

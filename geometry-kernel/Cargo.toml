@@ -2,7 +2,7 @@
 name = "geometry-kernel"
 version = "0.1.0"
 edition = "2021"
-description = "Mesh geometry kernel ported from Lychee C++ addon"
+description = "Mesh geometry kernel for STL repair and analysis"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -343,50 +343,47 @@ pub fn fill_boundary_holes(
     let mut used_edges: HashSet<Edge> = HashSet::new();
     let mut groups_created = 0;
     
+    // Build a directed next-vertex map: for each vertex, store (neighbor, directed_edge)
+    // so traversal follows the correct direction.
+    let mut dir_next: HashMap<u32, Vec<(u32, Edge)>> = HashMap::new();
+    for &e in &boundary_edges {
+        dir_next.entry(e.a).or_default().push((e.b, e));
+        dir_next.entry(e.b).or_default().push((e.a, e));
+    }
+
     for &start_edge in &boundary_edges {
         if used_edges.contains(&start_edge) || groups_created >= max_groups {
             continue;
         }
         
+        // Walk from start_edge.a → start_edge.b, following directed adjacency
         let mut loop_verts = Vec::new();
-        let mut current_edge = start_edge;
+        let mut current_vert = start_edge.a;
         
         loop {
-            if used_edges.contains(&current_edge) {
-                break;
-            }
-            
-            used_edges.insert(current_edge);
-            loop_verts.push(current_edge.a);
-            loop_verts.push(current_edge.b);
-            
-            // Find next unused edge sharing current_edge.b
-            let end_vertex = current_edge.b;
-            let next_edge = adj.get(&end_vertex)
+            // Find the next unused directed edge from current_vert
+            let next = dir_next.get(&current_vert)
                 .and_then(|edges| {
-                    edges.iter().find(|&&e| !used_edges.contains(&e))
-                })
-                .copied();
+                    edges.iter().find(|&(_, e)| !used_edges.contains(e))
+                });
             
-            match next_edge {
-                Some(e) => current_edge = e,
+            match next {
+                Some((next_vert, edge)) => {
+                    used_edges.insert(*edge);
+                    loop_verts.push(current_vert);
+                    current_vert = *next_vert;
+                    // Stop if we've returned to the start
+                    if current_vert == loop_verts[0] {
+                        break;
+                    }
+                }
                 None => break,
             }
         }
         
-        if loop_verts.len() >= 6 {
-            let mut unique_loop = Vec::new();
-            let mut seen = HashSet::new();
-            for &v in &loop_verts {
-                if seen.insert(v) {
-                    unique_loop.push(v);
-                }
-            }
-            
-            if unique_loop.len() >= 3 {
-                loops.push(unique_loop);
-                groups_created += 1;
-            }
+        if loop_verts.len() >= 3 {
+            loops.push(loop_verts);
+            groups_created += 1;
         }
     }
     

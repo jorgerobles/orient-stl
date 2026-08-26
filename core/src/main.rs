@@ -22,7 +22,7 @@ use orient_core::selection;
 use orient_core::stability;
 use orient_core::yaw;
 use orient_core::{normalise_dir, prepare_data_native_with_repair, reconstruct_mesh};
-use orient_core::repair::{DEFAULT_MAX_HOLE_EDGES, DEFAULT_WELD_EPSILON};
+use geometry_kernel::flat::{DEFAULT_MAX_HOLE_EDGES, DEFAULT_WELD_EPSILON};
 
 // ---------------------------------------------------------------------------
 // CLI arguments

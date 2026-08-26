@@ -2,6 +2,7 @@ mod mesh;
 mod repair;
 mod analysis;
 mod types;
+pub mod flat;
 
 pub use types::*;
 pub use mesh::MeshData;

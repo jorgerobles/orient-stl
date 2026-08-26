@@ -49,7 +49,7 @@ fn default_dedupe_angle() -> f32 { 3.0 }
 fn default_refine() -> u32 { 0 }
 fn default_exclude_unstable() -> bool { true }
 fn default_max_hole_edges() -> u32 { 0 }
-fn default_weld_epsilon() -> f32 { repair::DEFAULT_WELD_EPSILON }
+fn default_weld_epsilon() -> f32 { geometry_kernel::flat::DEFAULT_WELD_EPSILON }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,14 +83,14 @@ pub fn prepare_data_native_with_repair(
     }
 
     let mut flat: Vec<f32> = triangles.iter().flat_map(|v| v.iter()).copied().collect();
-    repair::repair_mesh(&mut flat);
-    repair::normalize_winding(&mut flat);
+    geometry_kernel::flat::repair_mesh(&mut flat);
+    geometry_kernel::flat::normalize_winding(&mut flat);
     if weld_epsilon > 0.0 {
-        repair::weld_vertices(&mut flat, weld_epsilon);
-        repair::repair_mesh(&mut flat);
+        geometry_kernel::flat::weld_vertices(&mut flat, weld_epsilon);
+        geometry_kernel::flat::repair_mesh(&mut flat);
     }
     if max_hole_edges > 0 {
-        repair::fill_holes(&mut flat, max_hole_edges);
+        geometry_kernel::flat::fill_holes(&mut flat, max_hole_edges);
     }
     let m = mesh::precompute_mesh(&flat);
     if m.triangle_count == 0 {
@@ -155,7 +155,7 @@ pub fn prepare_data(bytes: &[u8], config: &JsValue) -> JsValue {
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn count_boundary_edges_wasm(positions: &[f32]) -> u32 {
-    repair::count_boundary_edges(positions)
+    geometry_kernel::flat::count_boundary_edges(positions)
 }
 
 // ── Step-by-step WASM pipeline (for progress UI) ──
@@ -171,7 +171,7 @@ pub fn stl_parse_to_positions(bytes: &[u8]) -> Result<Vec<f32>, JsValue> {
 #[wasm_bindgen]
 pub fn repair_mesh_tris(positions: Vec<f32>) -> Vec<f32> {
     let mut p = positions;
-    repair::repair_mesh(&mut p);
+    geometry_kernel::flat::repair_mesh(&mut p);
     p
 }
 
@@ -179,7 +179,7 @@ pub fn repair_mesh_tris(positions: Vec<f32>) -> Vec<f32> {
 #[wasm_bindgen]
 pub fn normalize_winding_tris(positions: Vec<f32>) -> Vec<f32> {
     let mut p = positions;
-    repair::normalize_winding(&mut p);
+    geometry_kernel::flat::normalize_winding(&mut p);
     p
 }
 
@@ -187,7 +187,7 @@ pub fn normalize_winding_tris(positions: Vec<f32>) -> Vec<f32> {
 #[wasm_bindgen]
 pub fn weld_vertices_tris(positions: Vec<f32>, epsilon: f32) -> Vec<f32> {
     let mut p = positions;
-    repair::weld_vertices(&mut p, epsilon);
+    geometry_kernel::flat::weld_vertices(&mut p, epsilon);
     p
 }
 
@@ -195,7 +195,7 @@ pub fn weld_vertices_tris(positions: Vec<f32>, epsilon: f32) -> Vec<f32> {
 #[wasm_bindgen]
 pub fn fill_holes_tris(positions: Vec<f32>, max_edges: u32) -> Vec<f32> {
     let mut p = positions;
-    repair::fill_holes(&mut p, max_edges);
+    geometry_kernel::flat::fill_holes(&mut p, max_edges);
     p
 }
 
