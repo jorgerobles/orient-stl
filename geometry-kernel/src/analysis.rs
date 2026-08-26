@@ -112,7 +112,7 @@ fn calculate_signed_volume(vertices: &[f32], indices: &[u32]) -> f32 {
 }
 
 /// Count connected components
-pub fn count_connected_components(_vertices: &[f32], indices: &[u32]) -> u32 {
+pub fn count_connected_components(vertices: &[f32], indices: &[u32]) -> u32 {
     if indices.is_empty() {
         return 0;
     }

@@ -18,7 +18,7 @@ impl Edge {
 
 /// Fix face normals by propagating orientation from a seed triangle.
 /// Returns number of flipped triangles.
-pub fn fix_normals(_vertices: &mut [f32], indices: &mut [u32]) -> u32 {
+pub fn fix_normals(vertices: &mut [f32], indices: &mut [u32]) -> u32 {
     if indices.len() < 3 {
         return 0;
     }
@@ -303,7 +303,7 @@ pub fn remove_invisible_surfaces(
 /// Fill boundary holes using ear-clipping triangulation.
 /// Returns number of holes filled.
 pub fn fill_boundary_holes(
-    _vertices: &mut Vec<f32>,
+    vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
     max_groups: u32,
 ) -> u32 {
@@ -349,44 +349,44 @@ pub fn fill_boundary_holes(
         }
         
         let mut loop_verts = Vec::new();
-        let current_edge = start_edge;
-        
-        // Push first edge's vertices — direction doesn't matter for the first edge
-        loop_verts.push(current_edge.a);
-        loop_verts.push(current_edge.b);
-        used_edges.insert(current_edge);
-        
-        // Walk the loop from current_edge.b
-        let mut current_vertex = current_edge.b;
+        let mut current_edge = start_edge;
         
         loop {
-            // Find next unused edge sharing current_vertex
-            let next_edge = adj.get(&current_vertex)
+            if used_edges.contains(&current_edge) {
+                break;
+            }
+            
+            used_edges.insert(current_edge);
+            loop_verts.push(current_edge.a);
+            loop_verts.push(current_edge.b);
+            
+            // Find next unused edge sharing current_edge.b
+            let end_vertex = current_edge.b;
+            let next_edge = adj.get(&end_vertex)
                 .and_then(|edges| {
                     edges.iter().find(|&&e| !used_edges.contains(&e))
                 })
                 .copied();
             
             match next_edge {
-                Some(e) => {
-                    used_edges.insert(e);
-                    let next_vertex = if e.a == current_vertex { e.b } else { e.a };
-                    loop_verts.push(next_vertex);
-                    current_vertex = next_vertex;
-                    
-                    // Check if loop is closed
-                    if current_vertex == loop_verts[0] {
-                        break;
-                    }
-                }
+                Some(e) => current_edge = e,
                 None => break,
             }
         }
         
-        if loop_verts.len() >= 3 {
-            // loop_verts already has unique vertices in order
-            loops.push(loop_verts);
-            groups_created += 1;
+        if loop_verts.len() >= 6 {
+            let mut unique_loop = Vec::new();
+            let mut seen = HashSet::new();
+            for &v in &loop_verts {
+                if seen.insert(v) {
+                    unique_loop.push(v);
+                }
+            }
+            
+            if unique_loop.len() >= 3 {
+                loops.push(unique_loop);
+                groups_created += 1;
+            }
         }
     }
     
