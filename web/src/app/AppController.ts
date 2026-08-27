@@ -149,6 +149,7 @@ export class AppController {
     deps.configPanel.onExport(() => this.exportCurrent());
 
     deps.supportPanel.onChange(({ enabled, config }) => {
+      console.log('[orient] Support panel changed:', enabled ? 'enabled' : 'disabled');
       deps.state.set('generateSupports', enabled);
       deps.state.set('supportConfig', config);
       deps.viewport.setSupportVisible(enabled);
@@ -217,6 +218,9 @@ export class AppController {
 
       if (fullData.supports) {
         this.deps.state.set('supports', fullData.supports);
+        console.log('[orient] Supports generated:', fullData.supports.supports.length, 'contacts,', fullData.supports.islandCount, 'islands');
+      } else if (generateSupports) {
+        console.warn('[orient] Support generation was requested but no supports returned');
       }
 
       this.updateMeshHealth(file.name, fullData.positions, autoRepair);
@@ -229,6 +233,7 @@ export class AppController {
       await paint();
 
       if (fullData.supports && generateSupports) {
+        console.log('[orient] Rendering supports in viewport');
         this.deps.viewport.renderSupports(fullData.supports);
         this.deps.viewport.setSupportVisible(true);
       }
