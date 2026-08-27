@@ -1,5 +1,15 @@
 /// Mesh precomputation — normals, areas, vertices.
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+}
+
+#[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct MeshOutput {
     pub positions: Vec<f32>,
     pub normals: Vec<f32>,
@@ -51,6 +61,13 @@ pub fn precompute_mesh_data(positions: &[f32]) -> Result<MeshOutput, String> {
         normals: normals_flat,
         areas,
     })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn precompute_mesh_data_wasm(positions: &[f32]) -> Result<JsValue, JsValue> {
+    let output = precompute_mesh_data(positions).map_err(|e| JsValue::from_str(&e))?;
+    serde_wasm_bindgen::to_value(&output).map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
 #[cfg(test)]

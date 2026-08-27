@@ -229,7 +229,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "mesher"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "serde",
+ "serde-wasm-bindgen",
  "wasm-bindgen",
 ]
 
@@ -377,6 +379,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 name = "stl-parse"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "serde",
  "stl_io",
  "wasm-bindgen",
@@ -386,6 +389,7 @@ dependencies = [
 name = "stl-repair"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "geometry-kernel",
  "wasm-bindgen",
 ]
