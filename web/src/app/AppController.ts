@@ -213,10 +213,6 @@ export class AppController {
 
       if (fullData.supports) {
         this.deps.state.set('supports', fullData.supports);
-        if (generateSupports) {
-          this.deps.viewport.renderSupports(fullData.supports);
-          this.deps.viewport.setSupportVisible(true);
-        }
       }
 
       this.updateMeshHealth(file.name, fullData.positions, autoRepair);
@@ -227,6 +223,11 @@ export class AppController {
       this.deps.viewport.loadModel(fullData.positions, fullData.normals);
       this.deps.viewport.resetCamera();
       await paint();
+
+      if (fullData.supports && generateSupports) {
+        this.deps.viewport.renderSupports(fullData.supports);
+        this.deps.viewport.setSupportVisible(true);
+      }
 
       const diag = bboxDiagonalFromPositions(fullData.positions);
       this.deps.state.set('bboxDiagonal', diag);
@@ -264,7 +265,9 @@ export class AppController {
   private async parseCurrentData(): Promise<OriData | null> {
     if (!this.lastFileBytes) return null;
     const autoRepair = this.deps.state.get('config').autoRepair;
-    const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {});
+    const generateSupports = this.deps.state.get('generateSupports');
+    const supportConfig = this.deps.state.get('supportConfig');
+    const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {}, generateSupports, supportConfig);
     if (!data || data.positions.length === 0) return null;
     const conv = this.deps.state.get('loadConvention');
     return {
@@ -516,6 +519,14 @@ export class AppController {
     this.deps.viewport.setCriticalAngle(this.deps.state.get('config').criticalAngleDeg);
     this.computeNormBounds(data);
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
+
+    const generateSupports = this.deps.state.get('generateSupports');
+    const supports = this.deps.state.get('supports');
+    if (supports && generateSupports) {
+      this.deps.viewport.renderSupports(supports);
+      this.deps.viewport.setSupportVisible(true);
+    }
+
     if (this.deps.state.get('candidates').length > 0) {
       this.spawnCompute(data);
     } else {
