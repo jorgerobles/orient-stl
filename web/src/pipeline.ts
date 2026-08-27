@@ -73,6 +73,7 @@ function runWorker<T extends WorkerResponse>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const handler = (e: MessageEvent<T>) => {
+      if (e.data.type === 'progress') return;
       worker.removeEventListener('message', handler);
       worker.removeEventListener('error', errorHandler);
       resolve(e.data);
@@ -179,9 +180,11 @@ export async function runPipeline(
   orientWorker.terminate();
   onProgress('Scoring orientations...', 90);
 
+  const candidates = scoreResult?.candidates ?? [];
+
   // Stage 5: Support generation (optional)
   let supports: SupportResult | undefined;
-  if (config.generateSupports && scoreResult.candidates.length > 0) {
+  if (config.generateSupports && candidates.length > 0) {
     onProgress('Generating supports...', 92);
     try {
       const supportWorker = new Worker(
@@ -225,7 +228,7 @@ export async function runPipeline(
     positions: meshed.positions,
     normals: meshed.normals,
     areas: meshed.areas,
-    candidates: scoreResult.candidates,
+    candidates,
     supports,
   };
 }
