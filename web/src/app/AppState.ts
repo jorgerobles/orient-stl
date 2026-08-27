@@ -1,4 +1,4 @@
-import type { OrientConfig, Candidate, OriData } from "../types";
+import type { OrientConfig, Candidate, OriData, SupportConfig, SupportResult } from "../types";
 import type { LoadConvention } from "../convention";
 
 export interface AppStateData {
@@ -18,6 +18,9 @@ export interface AppStateData {
   normBounds: { lo: number[]; hi: number[] } | null;
   bboxDiagonal: number;
   loadConvention: LoadConvention;
+  generateSupports: boolean;
+  supportConfig: SupportConfig;
+  supports: SupportResult | null;
 }
 
 export class AppState extends EventTarget {

@@ -5,7 +5,9 @@ import { FileDrop } from './views/FileDrop';
 import { ConfigPanel } from './views/ConfigPanel';
 import { ScorePanel } from './views/ScorePanel';
 import { CandidateList } from './views/CandidateList';
+import { SupportPanel } from './views/SupportPanel';
 import { defaultConfig } from './types';
+import { defaultSupportConfig } from './views/SupportPanel';
 import { DEFAULT_PROFILE, DEFAULT_RANKER } from './constants';
 import './styles/theme.css';
 import './styles/main.css';
@@ -26,6 +28,9 @@ function boot(): void {
     normBounds: null,
     bboxDiagonal: 0,
     loadConvention: 'z-up',
+    generateSupports: false,
+    supportConfig: defaultSupportConfig(),
+    supports: null,
   });
 
   const viewportContainer = document.getElementById('viewport')!;
@@ -62,6 +67,10 @@ function boot(): void {
     document.getElementById('candidates-section')!,
   );
 
+  const supportPanel = new SupportPanel(
+    document.getElementById('support-panel')!,
+  );
+
   const controller = new AppController({
     state,
     viewport,
@@ -69,6 +78,7 @@ function boot(): void {
     configPanel,
     scorePanel,
     candidateList,
+    supportPanel,
     workerFactory: () => new Worker(new URL('./workers/orient.worker.ts', import.meta.url), { type: 'module' }),
     statusEl: document.getElementById('status')!,
     progressContainer: document.getElementById('progress-container')!,

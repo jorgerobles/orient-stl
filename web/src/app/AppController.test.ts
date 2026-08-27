@@ -4,6 +4,7 @@ import type { AppControllerDeps } from "./AppController";
 import { AppState } from "./AppState";
 import type { AppStateData } from "./AppState";
 import { defaultConfig } from "../types";
+import { defaultSupportConfig } from "../views/SupportPanel";
 import type { Candidate, WorkerMessage } from "../types";
 
 function createInitialState(): AppStateData {
@@ -20,6 +21,9 @@ function createInitialState(): AppStateData {
     normBounds: null,
     bboxDiagonal: 50,
     loadConvention: "z-up",
+    generateSupports: false,
+    supportConfig: defaultSupportConfig(),
+    supports: null,
   };
 }
 
@@ -78,6 +82,10 @@ function createMockDeps(): AppControllerDeps {
     } as any,
     scorePanel: { update: vi.fn() } as any,
     candidateList: { render: vi.fn(), show: vi.fn(), hide: vi.fn(), onSelect: vi.fn() } as any,
+    supportPanel: {
+      onChange: vi.fn(),
+      getState: vi.fn(() => ({ enabled: false, config: defaultSupportConfig() })),
+    } as any,
     workerFactory: vi.fn(() => mockWorker()),
     statusEl: { textContent: "" } as HTMLElement,
     progressContainer: { style: {} } as HTMLElement,

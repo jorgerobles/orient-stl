@@ -3,6 +3,7 @@ import type { FileDrop } from '../views/FileDrop';
 import type { ConfigPanel } from '../views/ConfigPanel';
 import type { ScorePanel } from '../views/ScorePanel';
 import type { CandidateList } from '../views/CandidateList';
+import type { SupportPanel } from '../views/SupportPanel';
 import { AppState } from './AppState';
 import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest } from '../types';
 import { defaultConfig } from '../types';
@@ -27,6 +28,7 @@ export interface AppControllerDeps {
   configPanel: ConfigPanel;
   scorePanel: ScorePanel;
   candidateList: CandidateList;
+  supportPanel: SupportPanel;
   workerFactory: () => Worker;
   statusEl: HTMLElement;
   progressContainer: HTMLElement;
@@ -145,6 +147,11 @@ export class AppController {
       if (lod) this.spawnCompute(lod);
     });
     deps.configPanel.onExport(() => this.exportCurrent());
+
+    deps.supportPanel.onChange(({ enabled, config }) => {
+      deps.state.set('generateSupports', enabled);
+      deps.state.set('supportConfig', config);
+    });
 
     deps.candidateList.onSelect((i) => this.showCandidate(i));
 

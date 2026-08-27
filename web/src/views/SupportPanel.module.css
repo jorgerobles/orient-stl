@@ -1,0 +1,53 @@
+.panel {
+  margin-top: 0.6rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border, #333);
+}
+
+.panel h3 {
+  margin: 0 0 0.4rem 0;
+  font-size: 0.85rem;
+  color: var(--text-dim, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.toggle input[type="checkbox"] {
+  accent-color: var(--accent, #4caf50);
+}
+
+.config {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+  padding: 0.4rem;
+  background: var(--bg-subtle, rgba(255,255,255,0.03));
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.config label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-dim, #aaa);
+}
+
+.config input[type="number"] {
+  width: 4.5em;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border, #444);
+  border-radius: 3px;
+  background: var(--bg-input, #1a1a1a);
+  color: var(--text, #eee);
+  font-size: 0.8rem;
+}

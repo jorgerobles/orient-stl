@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { AppState } from "./AppState";
 import { defaultConfig } from "../types";
+import { defaultSupportConfig } from "../views/SupportPanel";
 import type { AppStateData } from "./AppState";
 
 function createInitialState(): AppStateData {
@@ -17,6 +18,9 @@ function createInitialState(): AppStateData {
     normBounds: null,
     bboxDiagonal: 0,
     loadConvention: "z-up",
+    generateSupports: false,
+    supportConfig: defaultSupportConfig(),
+    supports: null,
   };
 }
 
