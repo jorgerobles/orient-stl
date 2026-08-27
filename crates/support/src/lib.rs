@@ -1,5 +1,8 @@
 pub mod types;
 pub mod island;
+pub mod volume;
+pub mod placement;
+pub mod raft;
 
 #[cfg(test)]
 mod tests {
