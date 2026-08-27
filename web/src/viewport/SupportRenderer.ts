@@ -7,12 +7,14 @@ const TYPE_COLORS: Record<string, number> = {
   heavy: 0xf44336,
 };
 
+const MIN_COLUMN_RADIUS = 0.8;
+const BASE_RADIUS_FACTOR = 2.5;
+
 export class SupportRenderer {
   private scene: THREE.Scene;
   private group: THREE.Group;
   private columnMeshes: THREE.Mesh[] = [];
   private raftMesh: THREE.Mesh | null = null;
-  private raftLines: THREE.LineSegments | null = null;
   private _visible = false;
 
   constructor(scene: THREE.Scene) {
@@ -25,7 +27,6 @@ export class SupportRenderer {
 
   render(result: SupportResult): void {
     this.clear();
-
     this.renderRaft(result.raft);
 
     for (const support of result.supports) {
@@ -38,14 +39,18 @@ export class SupportRenderer {
     const base = new THREE.Vector3(...contact.base);
     const tip = new THREE.Vector3(...contact.position);
     const height = base.distanceTo(tip);
-    if (height < 1e-6) return;
-    const radius = contact.tipDiameter / 2;
+    if (height < 0.01) return;
 
-    const geo = new THREE.CylinderGeometry(radius, radius, height, 8);
-    const mat = new THREE.MeshBasicMaterial({
-      color: TYPE_COLORS[contact.supportType] ?? 0x999999,
+    const tipRadius = Math.max(contact.tipDiameter / 2, MIN_COLUMN_RADIUS);
+    const baseRadius = tipRadius * BASE_RADIUS_FACTOR;
+
+    const geo = new THREE.CylinderGeometry(tipRadius, baseRadius, height, 8);
+    const color = TYPE_COLORS[contact.supportType] ?? 0x999999;
+    const mat = new THREE.MeshPhongMaterial({
+      color,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.85,
+      shininess: 30,
     });
     const mesh = new THREE.Mesh(geo, mat);
 
@@ -69,24 +74,15 @@ export class SupportRenderer {
     geo.setIndex(new THREE.BufferAttribute(new Uint32Array(raft.triangles), 1));
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshPhongMaterial({
       color: 0x9e9e9e,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.4,
       side: THREE.DoubleSide,
+      shininess: 10,
     });
     this.raftMesh = new THREE.Mesh(geo, mat);
     this.group.add(this.raftMesh);
-
-    if (raft.lines.length > 0) {
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(raft.vertices, 3));
-      lineGeo.setIndex(new THREE.BufferAttribute(new Uint32Array(raft.lines), 1));
-
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x616161 });
-      this.raftLines = new THREE.LineSegments(lineGeo, lineMat);
-      this.group.add(this.raftLines);
-    }
   }
 
   clear(): void {
@@ -102,12 +98,6 @@ export class SupportRenderer {
       (this.raftMesh.material as THREE.Material).dispose();
       this.group.remove(this.raftMesh);
       this.raftMesh = null;
-    }
-    if (this.raftLines) {
-      this.raftLines.geometry.dispose();
-      (this.raftLines.material as THREE.Material).dispose();
-      this.group.remove(this.raftLines);
-      this.raftLines = null;
     }
   }
 
