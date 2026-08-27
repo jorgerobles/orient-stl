@@ -88,6 +88,7 @@ function createMockDeps(): AppControllerDeps {
       onExport: vi.fn(),
       getState: vi.fn(() => ({ enabled: false, config: defaultSupportConfig() })),
       enableGenerate: vi.fn(),
+      setEnabled: vi.fn(),
     } as any,
     workerFactory: vi.fn(() => mockWorker()),
     statusEl: { textContent: "" } as HTMLElement,

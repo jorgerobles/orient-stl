@@ -106,10 +106,10 @@ export class SupportPanel {
   }
 
   private updateButtonStates(): void {
-    const genBtn = this.root.querySelector('#support-generate-btn') as HTMLButtonElement;
+    // Generate stays available (guarded by enableGenerate once a model is
+    // loaded) — it re-builds supports for the current orientation at any time.
     const rmBtn = this.root.querySelector('#support-remove-btn') as HTMLButtonElement;
     const expBtn = this.root.querySelector('#support-export-btn') as HTMLButtonElement;
-    genBtn.disabled = this.enabled;
     rmBtn.disabled = !this.enabled;
     expBtn.disabled = !this.enabled;
   }

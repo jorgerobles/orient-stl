@@ -11,7 +11,6 @@ const MIN_COLUMN_RADIUS = 0.8;
 const BASE_RADIUS_FACTOR = 2.5;
 
 export class SupportRenderer {
-  private parent: THREE.Object3D;
   private group: THREE.Group;
   private columnMeshes: THREE.Mesh[] = [];
   private raftMesh: THREE.Mesh | null = null;
@@ -19,60 +18,33 @@ export class SupportRenderer {
   private offset: THREE.Vector3 = new THREE.Vector3();
 
   constructor(parent: THREE.Object3D) {
-    this.parent = parent;
     this.group = new THREE.Group();
     this.group.name = 'supports';
     this.group.visible = false;
-    this.parent.add(this.group);
+    parent.add(this.group);
   }
 
   setOffset(x: number, y: number, z: number): void {
     this.offset.set(x, y, z);
   }
 
+  /**
+   * Re-parent the supports group so it follows the given object's transform
+   * (rotation via mesh.quaternion, modelGroup lift). Must be (re)attached
+   * whenever the viewport loads a new mesh, since loadModel replaces children.
+   */
+  attachTo(parent: THREE.Object3D): void {
+    parent.add(this.group);
+  }
+
   render(result: SupportResult): void {
     this.clear();
-
-    console.log('[SupportRenderer] Rendering:', result.supports.length, 'supports,', result.islandCount, 'islands');
-    if (result.supports.length > 0) {
-      const s = result.supports[0];
-      console.log('[SupportRenderer] Sample: type=' + s.contact.supportType + ' pos=' + JSON.stringify(s.contact.position) + ' base=' + JSON.stringify(s.contact.base) + ' tipDia=' + s.contact.tipDiameter);
-    }
 
     this.renderRaft(result.raft);
 
     for (const support of result.supports) {
       this.renderColumn(support);
-      this.renderDebugSphere(support);
     }
-  }
-
-  private renderDebugSphere(support: Support): void {
-    const { contact } = support;
-    const pos = new THREE.Vector3(...contact.position).add(this.offset);
-    const base = new THREE.Vector3(...contact.base).add(this.offset);
-
-    // Also log the mesh bounding box for comparison
-    const parent = this.parent as any;
-    const bbox = parent.children?.[0]?.geometry?.boundingBox;
-
-    console.log('[DEBUG] pos=' + pos.toArray() + ' base=' + base.toArray() + ' offset=' + this.offset.toArray() + ' bbox=' + (bbox ? bbox.min.toArray() + '→' + bbox.max.toArray() : 'none'));
-
-    // Large red sphere at contact point
-    const tipGeo = new THREE.SphereGeometry(2, 16, 16);
-    const tipMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const tipSphere = new THREE.Mesh(tipGeo, tipMat);
-    tipSphere.position.copy(pos);
-    this.group.add(tipSphere);
-    this.columnMeshes.push(tipSphere);
-
-    // Large blue sphere at base point
-    const baseGeo = new THREE.SphereGeometry(2, 16, 16);
-    const baseMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-    const baseSphere = new THREE.Mesh(baseGeo, baseMat);
-    baseSphere.position.copy(base);
-    this.group.add(baseSphere);
-    this.columnMeshes.push(baseSphere);
   }
 
   private renderColumn(support: Support): void {
@@ -168,6 +140,6 @@ export class SupportRenderer {
 
   dispose(): void {
     this.clear();
-    this.parent.remove(this.group);
+    this.group.removeFromParent();
   }
 }

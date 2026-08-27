@@ -151,8 +151,11 @@ export class AppController {
     deps.supportPanel.onGenerate(() => {
       deps.state.set('generateSupports', true);
       deps.state.set('supportConfig', deps.supportPanel.getState().config);
-      const lod = deps.state.get('lastOriData');
-      if (lod) this.spawnCompute(lod);
+      // Rebuild supports for the orientation currently shown in the viewport
+      // (user may have rotated or picked another candidate since last build).
+      if (deps.state.get('lastOriData')) {
+        this.runSupportGeneration(deps.viewport.getMeshQuaternion());
+      }
     });
 
     deps.supportPanel.onRemove(() => {
@@ -206,12 +209,11 @@ export class AppController {
       this.deps.progressBar.className = 'progress-bar-fill determinate';
       const autoRepair = this.deps.state.get('config').autoRepair;
       const generateSupports = this.deps.state.get('generateSupports');
-      const supportConfig = this.deps.state.get('supportConfig');
-      console.log('[handleFile] generateSupports:', generateSupports, 'autoRepair:', autoRepair);
+      this.deps.state.set('supports', null);
       const fullData = await loadWithProgress(bytes, autoRepair, (label, pct) => {
         this.deps.progressLabel.textContent = label;
         this.deps.progressBar.style.width = pct + '%';
-      }, generateSupports, supportConfig);
+      });
       if (!fullData || fullData.positions.length === 0) throw new Error('No triangles in STL');
 
       const conv = this.deps.state.get('loadConvention');
@@ -222,13 +224,6 @@ export class AppController {
 
       this.deps.state.set('lastOriData', fullData);
 
-      if (fullData.supports) {
-        this.deps.state.set('supports', fullData.supports);
-        console.log('[orient] Supports generated:', fullData.supports.supports.length, 'contacts,', fullData.supports.islandCount, 'islands');
-      } else if (generateSupports) {
-        console.warn('[orient] Support generation was requested but no supports returned');
-      }
-
       this.updateMeshHealth(file.name, fullData.positions, autoRepair);
 
       this.deps.progressLabel.textContent = 'Rendering model...';
@@ -238,10 +233,9 @@ export class AppController {
       this.deps.viewport.resetCamera();
       await paint();
 
-      if (fullData.supports && generateSupports) {
-        console.log('[orient] Rendering supports in viewport');
-        this.deps.viewport.renderSupports(fullData.supports);
-        this.deps.viewport.setSupportVisible(true);
+      if (generateSupports) {
+        // Build supports for the as-loaded (identity) orientation the user sees.
+        this.runSupportGeneration(this.deps.viewport.getMeshQuaternion());
       }
 
       const diag = bboxDiagonalFromPositions(fullData.positions);
@@ -250,7 +244,10 @@ export class AppController {
       const decimated = decimateForScore(fullData, DECIMATE_TARGET);
       this.deps.state.set('liveData', { positions: decimated.positions, normals: decimated.normals, areas: decimated.areas });
       this.computeNormBounds(fullData);
-      this.deps.viewport.enterOverlayMode((q) => this.updateLiveScore(q));
+      this.deps.viewport.enterOverlayMode((q) => {
+        this.updateLiveScore(q);
+        this.invalidateSupports('Orientation changed');
+      });
 
       this.deps.resultsPlaceholder.style.display = 'none';
       this.deps.panelRight.style.display = 'block';
@@ -281,14 +278,9 @@ export class AppController {
   private async parseCurrentData(): Promise<OriData | null> {
     if (!this.lastFileBytes) return null;
     const autoRepair = this.deps.state.get('config').autoRepair;
-    const generateSupports = this.deps.state.get('generateSupports');
-    const supportConfig = this.deps.state.get('supportConfig');
-    const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {}, generateSupports, supportConfig);
+    const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {});
     if (!data || data.positions.length === 0) return null;
     const conv = this.deps.state.get('loadConvention');
-    if (data.supports) {
-      this.deps.state.set('supports', data.supports);
-    }
     return {
       positions: applyConvention(data.positions, conv),
       normals: applyConvention(data.normals, conv),
@@ -513,11 +505,8 @@ export class AppController {
 
     try {
       const supportConfig = this.deps.state.get('supportConfig');
-      const qw = quaternion[0], qx = quaternion[1], qy = quaternion[2], qz = quaternion[3];
-      const dx = 2 * (qx * qz + qw * qy);
-      const dy = 2 * (qy * qz - qw * qx);
-      const dz = 1 - 2 * (qx * qx + qy * qy);
-      const direction = new Float32Array([dx, dy, dz]);
+      // Down direction (toward build plate) in model space for this orientation
+      const direction = new Float32Array(dirFromQuat(quaternion));
 
       const worker = new Worker(
         new URL('../workers/support.worker.ts', import.meta.url),
@@ -551,13 +540,22 @@ export class AppController {
       if (result.type === 'error') {
         console.error('Support generation failed:', result.message);
         this.deps.statusEl.textContent = 'Support generation failed: ' + result.message;
+        this.deps.supportPanel.setEnabled(false);
       } else {
-        const supports = result.supports;
-        console.log('[orient] Supports generated:', supports.supports.length, 'contacts');
-        this.deps.state.set('supports', supports);
-        this.deps.viewport.renderSupports(supports);
-        this.deps.viewport.setSupportVisible(true);
-        this.deps.statusEl.textContent = supports.supports.length + ' supports generated';
+        // Guard against the user rotating while generation was running.
+        const currentQ = this.deps.viewport.getMeshQuaternion();
+        const stale = quaternion.some((c, i) => Math.abs(c - currentQ[i]) > 1e-6);
+        if (stale) {
+          this.deps.statusEl.textContent = 'Orientation changed during generation — press Generate Supports again';
+          this.deps.supportPanel.setEnabled(false);
+        } else {
+          const supports = result.supports;
+          this.deps.state.set('supports', supports);
+          this.deps.viewport.renderSupports(supports);
+          this.deps.viewport.setSupportVisible(true);
+          this.deps.supportPanel.setEnabled(true);
+          this.deps.statusEl.textContent = supports.supports.length + ' supports generated';
+        }
       }
     } catch (err) {
       console.error('Support generation error:', err);
@@ -585,11 +583,21 @@ export class AppController {
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion(), candidates[index].compositeScore);
     this.deps.candidateList.render(candidates, index);
 
-    const supports = this.deps.state.get('supports');
-    if (supports && this.deps.state.get('generateSupports')) {
-      this.deps.viewport.renderSupports(supports);
-      this.deps.viewport.setSupportVisible(true);
-    }
+    // Supports were built for a different orientation — drop them; Generate rebuilds.
+    this.invalidateSupports('Candidate changed');
+  }
+
+  /**
+   * Drop stale supports after an orientation change (rotation or candidate
+   * switch). The Generate button rebuilds them for the current orientation.
+   */
+  private invalidateSupports(reason: string): void {
+    if (!this.deps.state.get('supports')) return;
+    this.deps.state.set('supports', null);
+    this.deps.viewport.clearSupports();
+    this.deps.viewport.setSupportVisible(false);
+    this.deps.supportPanel.setEnabled(false);
+    this.deps.statusEl.textContent = reason + ' — press Generate Supports to rebuild';
   }
 
   private async recalculate(): Promise<void> {
@@ -613,13 +621,8 @@ export class AppController {
     this.deps.viewport.setCriticalAngle(this.deps.state.get('config').criticalAngleDeg);
     this.computeNormBounds(data);
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
-
-    const generateSupports = this.deps.state.get('generateSupports');
-    const supports = this.deps.state.get('supports');
-    if (supports && generateSupports) {
-      this.deps.viewport.renderSupports(supports);
-      this.deps.viewport.setSupportVisible(true);
-    }
+    // Stale supports (if any) are dropped; finishCompute regenerates after
+    // the fresh candidates are shown, or the user presses Generate.
 
     if (this.deps.state.get('candidates').length > 0) {
       this.spawnCompute(data);
@@ -638,7 +641,8 @@ export class AppController {
     const conv = this.deps.state.get('loadConvention');
     const rotated = rotatePositions(lod.positions, q);
     const frameFixed = inverseConvention(rotated, conv);
-    const supportRenderer = this.deps.state.get('generateSupports')
+    // Export supports only when they are actually on screen (not invalidated).
+    const supportRenderer = this.deps.viewport.supportIsVisible
       ? this.deps.viewport.getSupportRenderer()
       : null;
     exportSTL(frameFixed, this.deps.state.get('stlName'), this.deps.state.get('currentIndex') + 1, supportRenderer);

@@ -171,6 +171,7 @@ export class Viewport {
     }
     this.mesh = null;
     this.faceNormals = faceNormals || null;
+    this.supportRenderer.clear();
     if (this.dragHandler) {
       this.dragHandler.dispose();
       this.dragHandler = null;
@@ -201,6 +202,10 @@ export class Viewport {
     });
     this.mesh = new THREE.Mesh(geometry, material);
     this.modelGroup.add(this.mesh);
+    // Supports live under the mesh so they follow mesh.quaternion (candidate
+    // orientation, drag, yaw) — loadModel's cleanup above drops the previous
+    // parenting, so re-attach on every load.
+    this.supportRenderer.attachTo(this.mesh);
 
     const vertCountLocal = positions.length / 3;
     let cx = 0,

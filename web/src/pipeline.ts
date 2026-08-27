@@ -1,4 +1,4 @@
-import type { OriData, Candidate, ComputeConfig, SupportConfig, SupportResult } from './types';
+import type { OriData, Candidate, ComputeConfig } from './types';
 
 // ─── Worker message types ───
 
@@ -17,25 +17,15 @@ interface ScoreRequest {
   normHi: number[] | null;
 }
 
-interface SupportRequest {
-  type: 'support';
-  positions: Float32Array;
-  normals: Float32Array;
-  areas: Float32Array;
-  direction: Float32Array;
-  config: SupportConfig;
-}
-
-type WorkerRequest = ParseRequest | RepairRequest | MeshRequest | ScoreRequest | SupportRequest;
+type WorkerRequest = ParseRequest | RepairRequest | MeshRequest | ScoreRequest;
 
 interface ResultResponse { type: 'result'; positions: Float32Array; }
 interface MeshResponse { type: 'result'; positions: Float32Array; normals: Float32Array; areas: Float32Array; }
 interface ScoreResponse { type: 'results'; candidates: Candidate[]; }
-interface SupportResponse { type: 'result'; supports: SupportResult; }
 interface ProgressResponse { type: 'progress'; value: number; }
 interface ErrorResponse { type: 'error'; message: string; }
 
-type WorkerResponse = ResultResponse | MeshResponse | ScoreResponse | SupportResponse | ProgressResponse | ErrorResponse;
+type WorkerResponse = ResultResponse | MeshResponse | ScoreResponse | ProgressResponse | ErrorResponse;
 
 // ─── Pipeline types ───
 
@@ -50,8 +40,6 @@ export interface PipelineConfig {
   minAngleDeg: number;
   normLo?: number[];
   normHi?: number[];
-  generateSupports?: boolean;
-  support?: SupportConfig;
 }
 
 export interface PipelineResult {
@@ -59,7 +47,6 @@ export interface PipelineResult {
   normals: Float32Array;
   areas: Float32Array;
   candidates: Candidate[];
-  supports?: SupportResult;
 }
 
 export type ProgressCallback = (stage: string, pct: number) => void;
@@ -183,49 +170,9 @@ export async function runPipeline(
   const candidates = scoreResult?.candidates ?? [];
   console.log('[pipeline] Orient complete:', candidates.length, 'candidates');
 
-  // Stage 5: Support generation (optional)
-  let supports: SupportResult | undefined;
-  if (config.generateSupports && candidates.length > 0) {
-    console.log('[pipeline] Generating supports...');
-    onProgress('Generating supports...', 92);
-    try {
-      const supportWorker = new Worker(
-        new URL('./workers/support.worker.ts', import.meta.url),
-        { type: 'module' },
-      );
-
-      // Extract direction from best candidate quaternion
-      const bestQ = scoreResult.candidates[0].quaternion;
-      // Quaternion to direction: apply q to [0, -1, 0] (build direction)
-      const qw = bestQ[0], qx = bestQ[1], qy = bestQ[2], qz = bestQ[3];
-      // Rotate [0, -1, 0] by quaternion
-      const dx = 2 * (qx * qz + qw * qy);
-      const dy = 2 * (qy * qz - qw * qx);
-      const dz = 1 - 2 * (qx * qx + qy * qy);
-      const direction = new Float32Array([dx, dy, dz]);
-
-      const response = await runWorker<SupportResponse | ErrorResponse>(supportWorker, {
-        type: 'support',
-        positions: meshed.positions,
-        normals: meshed.normals,
-        areas: meshed.areas,
-        direction,
-        config: config.support!,
-      });
-      supportWorker.terminate();
-
-      if (response.type === 'error') {
-        console.error('Support generation failed:', response.message);
-      } else {
-        supports = response.supports;
-        console.log('[pipeline] Supports generated:', supports.supports.length, 'contacts,', supports.islandCount, 'islands');
-      }
-    } catch (err) {
-      console.error('Support generation error:', err);
-    }
-  } else if (config.generateSupports) {
-    console.warn('[pipeline] Support generation requested but no candidates to generate from');
-  }
+  // Supports are NOT generated here — they depend on the orientation the user
+  // ends up choosing, so AppController.runSupportGeneration builds them on
+  // demand (Generate button / candidate acceptance) via support.worker.
 
   onProgress('Done', 100);
 
@@ -234,6 +181,5 @@ export async function runPipeline(
     normals: meshed.normals,
     areas: meshed.areas,
     candidates,
-    supports,
   };
 }
