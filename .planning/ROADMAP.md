@@ -169,7 +169,7 @@ Plans:
 | 6. Frontend Architecture Refactor | 4/4 | ✅ Complete | 2026-07-14 |
 | 7. Correctness Fixes + H11 Scoring | 5/5 | ✅ Complete | 2026-08-27 |
 | 8. Workspace Split (Unix-Style WASM) | 3/3 | ✅ Complete | 2026-08-27 |
-| 9. Support Module | 0/2 | ⏳ Planned | — |
+| 9. Support Module | 2/2 | ✅ Complete | 2026-08-27 |
 | 10. UI Integration (Supports) | 0/3 | ⏳ Planned | — |
 
 **Phase 2 detail (final):**
@@ -281,8 +281,8 @@ Plans:
 
 Plans:
 
-- [ ] 09-01-PLAN.md — Core support algorithms: types, island detection, volume classification, placement, raft
-- [ ] 09-02-PLAN.md — WASM bindings + support worker + pipeline integration
+- [x] 09-01-PLAN.md — Core support algorithms: types, island detection, volume classification, placement, raft
+- [x] 09-02-PLAN.md — WASM bindings + support worker + pipeline integration
 
 ### Phase 10: UI Integration
 

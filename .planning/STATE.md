@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready
-stopped_at: Phase 9 context gathered
-last_updated: "2026-08-27T10:09:10.997Z"
+stopped_at: Phase 9 executed
+last_updated: "2026-08-27T13:02:00.000Z"
 last_activity: 2026-08-27
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 31
-  completed_plans: 25
-  percent: 64
+  completed_plans: 27
+  percent: 87
 ---
 
 # Project State
@@ -25,10 +25,17 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 
 ## Current Position
 
-Phase: 09 — Support Module (ready to plan)
-Plan: 0/2 (pending)
-Status: Ready
+Phase: 09 — Support Module (executed)
+Plan: 2/2 (complete)
+Status: Ready for verification
 Last activity: 2026-08-27
+
+### Phase 9 status
+
+| Plan | Status | Notes |
+|------|--------|-------|
+| 09-01 Core support algorithms | ✅ Complete | types, island, volume, placement, raft — 29 unit tests |
+| 09-02 WASM bindings + pipeline | ✅ Complete | support.worker.ts, pipeline.ts integration, Makefile target |
 
 ### Phase 7 status
 
@@ -53,7 +60,7 @@ Last activity: 2026-08-27
 
 **Velocity:**
 
-- Total plans completed: 25 (all phases)
+- Total plans completed: 27 (all phases)
 - Average duration: —
 - Total execution time: —
 
@@ -69,6 +76,7 @@ Last activity: 2026-08-27
 | 3.5 Scoring Expansion & Refinement | 2/2 ✅ | 32 min | 3 tasks + backfill |
 | 7. Correctness Fixes + H11 Scoring | 5/5 ✅ | — | 2026-08-27 |
 | 8. Workspace Split | 3/3 ✅ | — | 2026-08-27 |
+| 9. Support Module | 2/2 ✅ | 12 min | 2026-08-27 |
 
 ## Accumulated Context
 
@@ -118,6 +126,12 @@ Recent decisions affecting current work:
 - **[Phase 7]** Dead yaw subgraph deleted: `compute_default_yaw` + 7 dependent functions removed from candidates.rs
 - **[Phase 7]** H11 shadowed-overhang wired as 6th cost component in all 3 rankers (weighted, consensus, TOPSIS)
 - **[Phase 7]** `normalize_winding` uses edge-adjacency BFS + centroid voting for inverted normal detection
+- **[Phase 9]** Support crate is standalone — no dependency on orient or geometry-kernel (independent WASM binary)
+- **[Phase 9]** Island detection uses 2D slice rasterization with connected components (BFS on grid)
+- **[Phase 9]** Volume classification uses ray-cast mass-above heuristic with Möller-Trumbore intersection
+- **[Phase 9]** Contact placement uses variable-density Poisson-disk sampling with edge seeding
+- **[Phase 9]** Raft generation: convex hull → Delaunay (Bowyer-Watson) → MST (Kruskal's with union-find)
+- **[Phase 9]** Support worker lazy-loads WASM, pipeline.ts chains support after orient scoring
 
 ### Pending Todos
 
@@ -137,14 +151,14 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-08-27T10:09:10.989Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-support-module/09-CONTEXT.md
+Last session: 2026-08-27T13:02:00.000Z
+Stopped at: Phase 9 executed
+Resume file: .planning/phases/09-support-module/09-02-SUMMARY.md
 
 ### Infrastructure State
 
 - Vite dev server: stopped
-- WASM binaries: web/pkg/{stl-parse,stl-repair,mesher,orient}/ (4 independent modules)
+- WASM binaries: web/pkg/{stl-parse,stl-repair,mesher,orient,support}/ (5 independent modules)
 - TypeScript: `npx tsc --noEmit` passes (78 tests)
 - Build: `npm run build` succeeds
 - Rust: `cargo test --workspace` passes (105 unit + 1 ignored)
