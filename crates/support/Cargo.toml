@@ -13,8 +13,10 @@ serde_json = "1"
 
 # WASM-only — feature-gated
 wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
 js-sys = { version = "0.3.103", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [features]
 default = ["wasm"]
-wasm = ["wasm-bindgen", "js-sys"]
+wasm = ["wasm-bindgen", "serde-wasm-bindgen", "js-sys", "console_error_panic_hook"]

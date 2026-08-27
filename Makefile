@@ -4,7 +4,7 @@ PKG_DIR   := $(WEB_DIR)/pkg
 GH_BRANCH := gh-pages
 TMP_DEPLOY:= /tmp/orient-stl-deploy
 
-.PHONY: all build wasm wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient dev deploy commit test type-check clean
+.PHONY: all build wasm wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient wasm-support dev deploy commit test type-check clean
 
 all: build
 
@@ -22,7 +22,10 @@ wasm-mesher:
 wasm-orient:
 	wasm-pack build crates/orient --target bundler --out-dir ../../$(PKG_DIR)/orient
 
-wasm: wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient
+wasm-support:
+	wasm-pack build crates/support --target bundler --out-dir ../../$(PKG_DIR)/support
+
+wasm: wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient wasm-support
 
 # ─── Build ────────────────────────────────────────────────────
 

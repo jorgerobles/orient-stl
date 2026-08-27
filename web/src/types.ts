@@ -87,3 +87,49 @@ export interface WorkerRequest {
   normLo: number[] | null;
   normHi: number[] | null;
 }
+
+// ─── Support types ───
+
+export interface SupportConfig {
+  layerHeight: number;
+  lightThreshold: number;
+  mediumThreshold: number;
+  lightTipDiameter: number;
+  mediumTipDiameter: number;
+  heavyTipDiameter: number;
+  lightPenetration: number;
+  mediumPenetration: number;
+  heavyPenetration: number;
+  lightSpacing: [number, number];
+  mediumSpacing: [number, number];
+  heavySpacing: [number, number];
+  raftThickness: number;
+  raftLineWidth: number;
+  cellSize: number;
+}
+
+export interface ContactPoint {
+  position: [number, number, number];
+  base: [number, number, number];
+  supportType: 'light' | 'medium' | 'heavy';
+  tipDiameter: number;
+  penetration: number;
+}
+
+export interface Support {
+  contact: ContactPoint;
+  volumeAbove: number;
+}
+
+export interface RaftGeometry {
+  vertices: number[];
+  triangles: number[];
+  lines: number[];
+}
+
+export interface SupportResult {
+  supports: Support[];
+  raft: RaftGeometry;
+  totalVolume: number;
+  islandCount: number;
+}
