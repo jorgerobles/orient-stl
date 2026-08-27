@@ -493,11 +493,74 @@ export class AppController {
     this.deps.viewport.showCandidate(candidates[0].quaternion);
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
 
-    const supports = this.deps.state.get('supports');
-    if (supports && this.deps.state.get('generateSupports')) {
-      this.deps.viewport.renderSupports(supports);
-      this.deps.viewport.setSupportVisible(true);
+    if (this.deps.state.get('generateSupports')) {
+      this.runSupportGeneration(candidates[0].quaternion);
     }
+  }
+
+  private async runSupportGeneration(quaternion: [number, number, number, number]): Promise<void> {
+    const lod = this.deps.state.get('lastOriData');
+    if (!lod) return;
+    this.deps.progressLabel.textContent = 'Generating supports...';
+    this.deps.progressContainer.style.display = 'block';
+    this.deps.progressBar.className = 'progress-bar-fill indeterminate';
+
+    try {
+      const supportConfig = this.deps.state.get('supportConfig');
+      const qw = quaternion[0], qx = quaternion[1], qy = quaternion[2], qz = quaternion[3];
+      const dx = 2 * (qx * qz + qw * qy);
+      const dy = 2 * (qy * qz - qw * qx);
+      const dz = 1 - 2 * (qx * qx + qy * qy);
+      const direction = new Float32Array([dx, dy, dz]);
+
+      const worker = new Worker(
+        new URL('./workers/support.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+
+      const result = await new Promise<any>((resolve, reject) => {
+        const handler = (e: MessageEvent) => {
+          worker.removeEventListener('message', handler);
+          worker.removeEventListener('error', errorHandler);
+          resolve(e.data);
+        };
+        const errorHandler = (e: ErrorEvent) => {
+          worker.removeEventListener('message', handler);
+          worker.removeEventListener('error', errorHandler);
+          reject(new Error(e.message));
+        };
+        worker.addEventListener('message', handler);
+        worker.addEventListener('error', errorHandler);
+        worker.postMessage({
+          type: 'support',
+          positions: lod.positions,
+          normals: lod.normals,
+          areas: lod.areas,
+          direction,
+          config: supportConfig,
+        });
+      });
+      worker.terminate();
+
+      if (result.type === 'error') {
+        console.error('Support generation failed:', result.message);
+        this.deps.statusEl.textContent = 'Support generation failed: ' + result.message;
+      } else {
+        const supports = result.supports;
+        console.log('[orient] Supports generated:', supports.supports.length, 'contacts');
+        this.deps.state.set('supports', supports);
+        this.deps.viewport.renderSupports(supports);
+        this.deps.viewport.setSupportVisible(true);
+        this.deps.statusEl.textContent = supports.supports.length + ' supports generated';
+      }
+    } catch (err) {
+      console.error('Support generation error:', err);
+      this.deps.statusEl.textContent = 'Support generation error';
+    }
+
+    this.deps.progressContainer.style.display = 'none';
+    this.deps.progressBar.className = 'progress-bar-fill';
+    this.deps.progressBar.style.width = '0%';
   }
 
   cancelCompute(): void {
