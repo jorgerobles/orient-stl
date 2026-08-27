@@ -5,6 +5,8 @@ import { CAMERA_FOV, CAMERA_NEAR, CAMERA_FAR, INITIAL_CAMERA_POS } from "../cons
 import { GizmoController } from "./GizmoController";
 import { CameraRig } from "./CameraRig";
 import { DragHandler } from "./DragHandler";
+import { SupportRenderer } from "./SupportRenderer";
+import type { SupportResult } from "../types";
 
 export class Viewport {
   private scene: THREE.Scene;
@@ -21,6 +23,7 @@ export class Viewport {
   private gizmo: GizmoController | null = null;
   private cameraRig: CameraRig | null = null;
   private dragHandler: DragHandler | null = null;
+  private supportRenderer: SupportRenderer;
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
@@ -56,6 +59,8 @@ export class Viewport {
 
     this.plateGroup = new THREE.Group();
     this.scene.add(this.plateGroup);
+
+    this.supportRenderer = new SupportRenderer(this.scene);
 
     this.addLights();
     this.addBuildPlate();
@@ -257,6 +262,7 @@ export class Viewport {
       quaternion[3],
     );
     if (this.faceNormals) this.colorOverhang();
+    this.supportRenderer.clear();
   }
 
   applyYaw(yawDeg: number): void {
@@ -310,10 +316,29 @@ export class Viewport {
     return [q.x, q.y, q.z, q.w];
   }
 
+  // ─── Support Rendering ───────────────────────────────
+
+  renderSupports(result: SupportResult): void {
+    this.supportRenderer.render(result);
+  }
+
+  clearSupports(): void {
+    this.supportRenderer.clear();
+  }
+
+  setSupportVisible(visible: boolean): void {
+    this.supportRenderer.setVisible(visible);
+  }
+
+  get supportIsVisible(): boolean {
+    return this.supportRenderer.isVisible;
+  }
+
   dispose(): void {
     cancelAnimationFrame(this.animationId);
     this.gizmo?.dispose();
     this.dragHandler?.dispose();
+    this.supportRenderer.dispose();
     this.renderer.dispose();
   }
 }

@@ -5,7 +5,7 @@ import type { ScorePanel } from '../views/ScorePanel';
 import type { CandidateList } from '../views/CandidateList';
 import type { SupportPanel } from '../views/SupportPanel';
 import { AppState } from './AppState';
-import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest } from '../types';
+import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest, SupportResult } from '../types';
 import { defaultConfig } from '../types';
 import { loadSTLBytes, loadWithProgress } from '../loadSTL';
 import { decimateForScore } from '../compute';
@@ -151,6 +151,7 @@ export class AppController {
     deps.supportPanel.onChange(({ enabled, config }) => {
       deps.state.set('generateSupports', enabled);
       deps.state.set('supportConfig', config);
+      deps.viewport.setSupportVisible(enabled);
     });
 
     deps.candidateList.onSelect((i) => this.showCandidate(i));
@@ -194,10 +195,12 @@ export class AppController {
 
       this.deps.progressBar.className = 'progress-bar-fill determinate';
       const autoRepair = this.deps.state.get('config').autoRepair;
+      const generateSupports = this.deps.state.get('generateSupports');
+      const supportConfig = this.deps.state.get('supportConfig');
       const fullData = await loadWithProgress(bytes, autoRepair, (label, pct) => {
         this.deps.progressLabel.textContent = label;
         this.deps.progressBar.style.width = pct + '%';
-      });
+      }, generateSupports, supportConfig);
       if (!fullData || fullData.positions.length === 0) throw new Error('No triangles in STL');
 
       const conv = this.deps.state.get('loadConvention');
@@ -207,6 +210,14 @@ export class AppController {
       fullData.directions = applyConvention(fullData.directions, conv);
 
       this.deps.state.set('lastOriData', fullData);
+
+      if (fullData.supports) {
+        this.deps.state.set('supports', fullData.supports);
+        if (generateSupports) {
+          this.deps.viewport.renderSupports(fullData.supports);
+          this.deps.viewport.setSupportVisible(true);
+        }
+      }
 
       this.updateMeshHealth(file.name, fullData.positions, autoRepair);
 
@@ -476,6 +487,12 @@ export class AppController {
     this.deps.viewport.showCandidate(candidates[index].quaternion);
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion(), candidates[index].compositeScore);
     this.deps.candidateList.render(candidates, index);
+
+    const supports = this.deps.state.get('supports');
+    if (supports && this.deps.state.get('generateSupports')) {
+      this.deps.viewport.renderSupports(supports);
+      this.deps.viewport.setSupportVisible(true);
+    }
   }
 
   private async recalculate(): Promise<void> {

@@ -1,6 +1,6 @@
 import { runPipeline } from './pipeline';
 import type { PipelineConfig, PipelineResult } from './pipeline';
-import type { OriData, Candidate, ComputeConfig } from './types';
+import type { OriData, Candidate, ComputeConfig, SupportConfig, SupportResult } from './types';
 import { MAX_FILE_BYTES, DEFAULT_PROFILE, MIN_ANGLE_DEG } from './constants';
 import { WEIGHT_PRESETS } from './profiles';
 import { DEFAULT_RANKER } from './constants';
@@ -19,8 +19,14 @@ export async function loadWithProgress(
   bytes: Uint8Array,
   autoRepair: boolean,
   onProgress: ProgressCallback,
-): Promise<OriData & { candidates: Candidate[] }> {
+  generateSupports?: boolean,
+  supportConfig?: SupportConfig,
+): Promise<OriData & { candidates: Candidate[]; supports?: SupportResult }> {
   const config = autoRepair ? buildRepairConfig() : { ...buildRepairConfig(), autoRepair: false };
+  if (generateSupports) {
+    config.generateSupports = true;
+    config.support = supportConfig;
+  }
   const result = await runPipeline(bytes, config, onProgress);
 
   if (result.positions.length === 0) throw new Error('No triangles in STL');
@@ -33,6 +39,7 @@ export async function loadWithProgress(
     areas: result.areas,
     directions,
     candidates: result.candidates,
+    supports: result.supports,
   };
 }
 
