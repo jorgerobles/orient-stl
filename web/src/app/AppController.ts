@@ -148,16 +148,21 @@ export class AppController {
     });
     deps.configPanel.onExport(() => this.exportCurrent());
 
-    deps.supportPanel.onChange(({ enabled, config }) => {
-      console.log('[orient] Support panel changed:', enabled ? 'enabled' : 'disabled');
-      deps.state.set('generateSupports', enabled);
-      deps.state.set('supportConfig', config);
-      deps.viewport.setSupportVisible(enabled);
-      const exportBtn = document.getElementById('export-btn');
-      if (exportBtn) {
-        exportBtn.textContent = enabled ? 'Export STL with Supports' : 'Export STL';
-      }
+    deps.supportPanel.onGenerate(() => {
+      deps.state.set('generateSupports', true);
+      deps.state.set('supportConfig', deps.supportPanel.getState().config);
+      const lod = deps.state.get('lastOriData');
+      if (lod) this.spawnCompute(lod);
     });
+
+    deps.supportPanel.onRemove(() => {
+      deps.state.set('generateSupports', false);
+      deps.viewport.clearSupports();
+      deps.viewport.setSupportVisible(false);
+      deps.state.set('supports', null);
+    });
+
+    deps.supportPanel.onExport(() => this.exportCurrent());
 
     deps.candidateList.onSelect((i) => this.showCandidate(i));
 

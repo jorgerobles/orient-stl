@@ -12,23 +12,21 @@
   letter-spacing: 0.05em;
 }
 
-.toggle {
+.buttons {
   display: flex;
-  align-items: center;
   gap: 0.4rem;
-  cursor: pointer;
-  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
 }
 
-.toggle input[type="checkbox"] {
-  accent-color: var(--accent, #4caf50);
+.buttons button {
+  flex: 1;
 }
 
 .config {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
   padding: 0.4rem;
   background: var(--bg-subtle, rgba(255,255,255,0.03));
   border-radius: 4px;
@@ -50,4 +48,12 @@
   background: var(--bg-input, #1a1a1a);
   color: var(--text, #eee);
   font-size: 0.8rem;
+}
+
+.export {
+  margin-top: 0.2rem;
+}
+
+.export button {
+  width: 100%;
 }

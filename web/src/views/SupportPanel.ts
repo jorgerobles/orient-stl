@@ -30,18 +30,20 @@ export class SupportPanel {
   private root: HTMLElement;
   private enabled = false;
   private config: SupportConfig = defaultSupportConfig();
-  private changeCb: ((state: SupportPanelState) => void) | null = null;
+  private generateCb: (() => void) | null = null;
+  private removeCb: (() => void) | null = null;
+  private exportCb: (() => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('section');
     this.root.className = styles.panel;
     this.root.innerHTML = `
       <h3>Support Generation</h3>
-      <label class="${styles.toggle}">
-        <input type="checkbox" id="support-toggle" />
-        <span>Enable supports</span>
-      </label>
-      <div class="${styles.config}" id="support-config" hidden>
+      <div class="${styles.buttons}">
+        <button id="support-generate-btn" class="button button-sm" disabled>Generate Supports</button>
+        <button id="support-remove-btn" class="button button-sm button-danger" disabled>Remove</button>
+      </div>
+      <div class="${styles.config}" id="support-config">
         <label>Layer height: <input type="number" id="support-layer" value="0.05" step="0.01" min="0.01" max="0.1" /> mm</label>
         <label>Light threshold: <input type="number" id="support-light" value="50" step="10" min="0" /> mm³</label>
         <label>Medium threshold: <input type="number" id="support-medium" value="500" step="50" min="0" /> mm³</label>
@@ -49,29 +51,37 @@ export class SupportPanel {
         <label>Medium tip: <input type="number" id="support-medium-tip" value="0.40" step="0.05" min="0.1" /> mm</label>
         <label>Heavy tip: <input type="number" id="support-heavy-tip" value="0.80" step="0.05" min="0.1" /> mm</label>
       </div>
+      <div class="${styles.export}">
+        <button id="support-export-btn" class="button button-sm button-success" disabled>Export STL with Supports</button>
+      </div>
     `;
     container.appendChild(this.root);
     this.bindEvents();
   }
 
   private bindEvents(): void {
-    const toggle = this.root.querySelector('#support-toggle') as HTMLInputElement;
-    const configDiv = this.root.querySelector('#support-config') as HTMLDivElement;
+    this.root.querySelector('#support-generate-btn')!.addEventListener('click', () => {
+      this.config = this.readConfig();
+      this.enabled = true;
+      this.generateCb?.();
+      this.updateButtonStates();
+    });
 
-    toggle.addEventListener('change', () => {
-      this.enabled = toggle.checked;
-      configDiv.hidden = !this.enabled;
-      this.emit();
+    this.root.querySelector('#support-remove-btn')!.addEventListener('click', () => {
+      this.enabled = false;
+      this.removeCb?.();
+      this.updateButtonStates();
+    });
+
+    this.root.querySelector('#support-export-btn')!.addEventListener('click', () => {
+      this.exportCb?.();
     });
 
     this.root.querySelectorAll('.support-config input').forEach(input => {
-      input.addEventListener('change', () => this.emit());
+      input.addEventListener('change', () => {
+        this.config = this.readConfig();
+      });
     });
-  }
-
-  private emit(): void {
-    this.config = this.readConfig();
-    this.changeCb?.({ enabled: this.enabled, config: this.config });
   }
 
   private readConfig(): SupportConfig {
@@ -95,19 +105,29 @@ export class SupportPanel {
     };
   }
 
-  onChange(cb: (state: SupportPanelState) => void): void {
-    this.changeCb = cb;
+  private updateButtonStates(): void {
+    const genBtn = this.root.querySelector('#support-generate-btn') as HTMLButtonElement;
+    const rmBtn = this.root.querySelector('#support-remove-btn') as HTMLButtonElement;
+    const expBtn = this.root.querySelector('#support-export-btn') as HTMLButtonElement;
+    genBtn.disabled = this.enabled;
+    rmBtn.disabled = !this.enabled;
+    expBtn.disabled = !this.enabled;
   }
+
+  onGenerate(cb: () => void): void { this.generateCb = cb; }
+  onRemove(cb: () => void): void { this.removeCb = cb; }
+  onExport(cb: () => void): void { this.exportCb = cb; }
 
   getState(): SupportPanelState {
     return { enabled: this.enabled, config: this.config };
   }
 
+  enableGenerate(v: boolean): void {
+    (this.root.querySelector('#support-generate-btn') as HTMLButtonElement).disabled = !v;
+  }
+
   setEnabled(v: boolean): void {
     this.enabled = v;
-    const toggle = this.root.querySelector('#support-toggle') as HTMLInputElement;
-    const configDiv = this.root.querySelector('#support-config') as HTMLDivElement;
-    toggle.checked = v;
-    configDiv.hidden = !v;
+    this.updateButtonStates();
   }
 }

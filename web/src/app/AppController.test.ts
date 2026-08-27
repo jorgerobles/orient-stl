@@ -83,8 +83,11 @@ function createMockDeps(): AppControllerDeps {
     scorePanel: { update: vi.fn() } as any,
     candidateList: { render: vi.fn(), show: vi.fn(), hide: vi.fn(), onSelect: vi.fn() } as any,
     supportPanel: {
-      onChange: vi.fn(),
+      onGenerate: vi.fn(),
+      onRemove: vi.fn(),
+      onExport: vi.fn(),
       getState: vi.fn(() => ({ enabled: false, config: defaultSupportConfig() })),
+      enableGenerate: vi.fn(),
     } as any,
     workerFactory: vi.fn(() => mockWorker()),
     statusEl: { textContent: "" } as HTMLElement,
