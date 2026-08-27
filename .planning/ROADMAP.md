@@ -156,7 +156,7 @@ Plans:
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4 → 6 → 7
+**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 3.5 → 5 → 4 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -166,8 +166,11 @@ Plans:
 | 3.5 Scoring Expansion & Refinement | 2/2 | ✅ Complete | 2026-07-13 |
 | 5. Consolidate All Calculations in Rust | 4/4 | ✅ Complete | 2026-07-13 |
 | 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
-| 6. Frontend Architecture Refactor | 3/4 | Complete    | 2026-07-14 |
+| 6. Frontend Architecture Refactor | 4/4 | ✅ Complete | 2026-07-14 |
 | 7. Correctness Fixes + H11 Scoring | 0/4 | In Progress | — |
+| 8. Workspace Split (Unix-Style WASM) | 0/3 | ⏳ Planned | — |
+| 9. Support Module | 0/2 | ⏳ Planned | — |
+| 10. UI Integration (Supports) | 0/3 | ⏳ Planned | — |
 
 **Phase 2 detail (final):**
 
@@ -230,3 +233,77 @@ Plans:
 - [ ] 07-02-PLAN.md — Area-weighted center of mass + remove unused hull param from check_stability
 - [ ] 07-03-PLAN.md — Delete dead yaw subgraph in candidates.rs (compute_default_yaw + chain)
 - [ ] 07-04-PLAN.md — Wire H11 shadowed-overhang into composite score (Rust ranking + WASM exports + TS + profiles)
+
+### Phase 8: Workspace Split (Unix-Style WASM Modules)
+
+**Goal**: Restructure the coupled `core/` monolith into independent crates under `crates/`, each with a single WASM binary. Create per-module JS workers and a `pipeline.ts` orchestrator that chains them like Unix pipes.
+**Mode**: execute
+**Depends on**: Phase 7 (or can proceed in parallel if Phase 7 is partial)
+**Requirements**: (none — architecture restructuring)
+**Success Criteria** (what must be TRUE):
+
+  1. 5 independent crates under `crates/`: stl-parse, stl-repair, mesher, orient, geometry-kernel
+  2. geometry-kernel is rlib-only (no cdylib, no WASM bindings)
+  3. Each crate builds to its own WASM binary
+  4. JS workers load each WASM module independently
+  5. `pipeline.ts` chains workers: parse → repair → mesh → orient
+  6. All existing tests pass (Rust + TypeScript)
+  7. CLI binary works with new crate structure
+  8. App behavior is identical to pre-split
+
+**Plans:** 3 plans
+
+Plans:
+
+- [ ] 08-01-PLAN.md — Create workspace root + crate scaffolding + move source files
+- [ ] 08-02-PLAN.md — Create per-module WASM workers + pipeline.ts + update Makefile
+- [ ] 08-03-PLAN.md — Delete old core/ + fix imports + full test verification
+
+### Phase 9: Support Module
+
+**Goal**: Implement support generation as an independent WASM module: island detection (2D slice rasterization), volume-aware classification (Light/Medium/Heavy), Poisson-disk contact placement, and line-connected raft generation.
+**Mode**: execute
+**Depends on**: Phase 8
+**Requirements**: (none — new feature module)
+**Success Criteria** (what must be TRUE):
+
+  1. `crates/support/` with island.rs, volume.rs, placement.rs, raft.rs, types.rs
+  2. Island detection identifies disconnected overhang regions from 2D slice rasterization
+  3. Volume classification assigns support type based on mass above each island
+  4. Contact point placement uses variable-density Poisson-disk sampling with edge seeding
+  5. Line-connected raft: convex hull + Delaunay + MST
+  6. WASM binary compiles and exports `generate_supports()`
+  7. Unit tests pass with known-geometry ground truths (flat plate, cube, cylinder)
+  8. Integration with pipeline.ts: support generation runs after orient scoring
+
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 09-01-PLAN.md — Core support algorithms: types, island detection, volume classification, placement, raft
+- [ ] 09-02-PLAN.md — WASM bindings + support worker + pipeline integration
+
+### Phase 10: UI Integration
+
+**Goal**: Add support toggle and config panel, render support geometry in the three.js viewport, and export STL with supports baked in.
+**Mode**: execute
+**Depends on**: Phase 9
+**Requirements**: (none — UI integration)
+**Success Criteria** (what must be TRUE):
+
+  1. Support toggle enables/disables support generation
+  2. Config panel shows layer height, thresholds, tip diameters
+  3. Support columns render in viewport, colored by type (green/amber/red)
+  4. Raft mesh renders as semi-transparent base
+  5. Toggle switches support visibility
+  6. Supports update when changing candidate orientation
+  7. Export includes support geometry when enabled
+  8. Exported STL is valid and loadable in slicers
+
+**Plans:** 3 plans
+
+Plans:
+
+- [ ] 10-01-PLAN.md — SupportPanel UI + AppState wiring + AppController integration
+- [ ] 10-02-PLAN.md — SupportRenderer (three.js columns + raft) + Viewport integration
+- [ ] 10-03-PLAN.md — Export with supports merged into STL
