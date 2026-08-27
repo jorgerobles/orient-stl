@@ -265,6 +265,7 @@ export class AppController {
       this.deps.configPanel.enableFind(true);
       this.deps.configPanel.enableExport(true);
       this.deps.configPanel.enableRecalc(false);
+      this.deps.supportPanel.enableGenerate(true);
     } catch (err) {
       this.deps.progressContainer.style.display = 'none';
       this.deps.progressBar.className = 'progress-bar-fill';
