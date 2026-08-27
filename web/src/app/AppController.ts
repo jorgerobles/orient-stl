@@ -514,7 +514,7 @@ export class AppController {
       const direction = new Float32Array([dx, dy, dz]);
 
       const worker = new Worker(
-        new URL('./workers/support.worker.ts', import.meta.url),
+        new URL('../workers/support.worker.ts', import.meta.url),
         { type: 'module' },
       );
 
