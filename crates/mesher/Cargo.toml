@@ -1,0 +1,21 @@
+[package]
+name = "mesher"
+version = "0.1.0"
+edition = "2021"
+description = "Mesh precomputation"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+# WASM-only — feature-gated
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = ["wasm"]
+wasm = ["wasm-bindgen"]
+
+[profile.release]
+opt-level = "s"

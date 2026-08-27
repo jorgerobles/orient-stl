@@ -1,0 +1,21 @@
+[package]
+name = "stl-repair"
+version = "0.1.0"
+edition = "2021"
+description = "Mesh repair pipeline"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+geometry-kernel = { path = "../geometry-kernel" }
+
+# WASM-only — feature-gated
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = ["wasm"]
+wasm = ["wasm-bindgen"]
+
+[profile.release]
+opt-level = "s"

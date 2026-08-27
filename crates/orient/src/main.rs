@@ -1,0 +1,422 @@
+//! orient-stl native CLI — evaluate and rank STL orientations from the command line.
+//!
+//! Build:  `cargo build --features cli --profile release`
+//! Run:    `cargo run --features cli -- -s ../test-tetrahedron.stl`
+
+use std::path::PathBuf;
+
+use clap::Parser;
+use orient::decimate::{decimate_for_score, sample_for_hull};
+use orient::hull;
+use orient::ranking::{CandidateMetrics, ScoreWeights, rank_by_consensus, rank_by_topsis, rank_by_weights, to_display_score};
+use orient::scoring;
+use orient::selection;
+use orient::stability;
+use orient::yaw;
+use orient::{normalise_dir, prepare_data_native_with_repair, reconstruct_mesh};
+use geometry_kernel::flat::{DEFAULT_MAX_HOLE_EDGES, DEFAULT_WELD_EPSILON};
+
+// ---------------------------------------------------------------------------
+// CLI arguments
+// ---------------------------------------------------------------------------
+
+#[derive(Parser)]
+#[command(name = "orient", version, about = "STL orientation analyser")]
+struct Args {
+    /// Path to a binary STL file
+    #[arg(short, long)]
+    stl: PathBuf,
+
+    /// Candidate generation mode: "hull" or "hull_plus_sphere"
+    #[arg(long, default_value_t = DEFAULT_MODE.to_string())]
+    mode: String,
+
+    #[arg(long, default_value_t = DEFAULT_DEDUPE_ANGLE)]
+    dedupe_angle: f32,
+
+    #[arg(long, default_value_t = DEFAULT_CRITICAL_ANGLE)]
+    critical_angle: f32,
+
+    #[arg(long, default_value_t = DEFAULT_REFINE_ITERS)]
+    refine_iters: u32,
+
+    #[arg(long, default_value_t = DEFAULT_METHOD.to_string())]
+    method: String,
+
+    #[arg(long, default_value = DEFAULT_WEIGHTS, value_parser = parse_weights)]
+    weights: [f32; 6],
+
+    #[arg(long, default_value_t = DEFAULT_MAX_CANDIDATES)]
+    max_candidates: usize,
+
+    #[arg(long, default_value_t = DEFAULT_MIN_ANGLE)]
+    min_angle: f32,
+
+    #[arg(long, default_value_t = DEFAULT_EXCLUDE_UNSTABLE)]
+    exclude_unstable: bool,
+
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    #[arg(long)]
+    all_rankings: bool,
+
+    #[arg(long)]
+    with_identity: bool,
+
+    #[arg(long, default_value_t = DEFAULT_CONVENTION.to_string())]
+    convention: String,
+
+    /// Decimate mesh to N triangles for scoring (0 = no decimation)
+    #[arg(long, default_value_t = DECIMATE_TARGET)]
+    decimate: usize,
+
+    /// Fill holes with up to N boundary edges per hole (0 = disabled).
+    #[arg(long, default_value_t = DEFAULT_MAX_HOLE_EDGES)]
+    fix_edges: u32,
+
+    /// Vertex welding distance (0 = skip welding).
+    #[arg(long, default_value_t = DEFAULT_WELD_EPSILON)]
+    weld_epsilon: f32,
+}
+
+fn parse_weights(s: &str) -> Result<[f32; 6], String> {
+    let v: Vec<f32> = s.split(',').map(|x| x.trim().parse::<f32>().map_err(|e| format!("{e}"))).collect::<Result<Vec<_>, _>>()?;
+    if v.len() != 6 {
+        return Err(format!("expected 6 comma-separated weights, got {}", v.len()));
+    }
+    let mut out = [0.0f32; 6];
+    out.copy_from_slice(&v);
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DECIMATE_TARGET: usize = 12000;
+const DEFAULT_MODE: &str = "hull";
+const DEFAULT_DEDUPE_ANGLE: f32 = 3.0;
+const DEFAULT_CRITICAL_ANGLE: f32 = 30.0;
+const DEFAULT_REFINE_ITERS: u32 = 50;
+const DEFAULT_METHOD: &str = "weights";
+const DEFAULT_WEIGHTS: &str = "1.0,1.0,1.0,1.0,1.0,1.0";
+const DEFAULT_MAX_CANDIDATES: usize = 20;
+const DEFAULT_MIN_ANGLE: f32 = 15.0;
+const DEFAULT_EXCLUDE_UNSTABLE: bool = true;
+const DEFAULT_CONVENTION: &str = "z-up";
+
+// ---------------------------------------------------------------------------
+// Profile presets (mirrors web/src/profiles/*.json)
+// ---------------------------------------------------------------------------
+
+const PROFILES: &[(&str, [f32; 6])] = &[
+    ("overhang-only",       [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ("footprint-only",      [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]),
+    ("cross-only",          [0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+    ("surface-only",        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+    ("height-only",         [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+    ("overhang-footprint",  [1.0, 1.0, 0.0, 0.0, 0.0, 0.5]),
+    ("equal",               [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+    ("resin-biased",        [0.5, 1.0, 2.0, 0.5, 0.5, 2.0]),
+];
+
+const RANKERS: &[&str] = &["weights", "consensus", "topsis"];
+
+// ---------------------------------------------------------------------------
+// Output schema
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct CliOutput {
+    meta: Meta,
+    candidates: Vec<CandidateOut>,
+    selected: Vec<usize>,
+    rankings: Vec<RankingEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct RankingEntry {
+    candidate: usize,
+    profile: String,
+    ranker: String,
+    composite_score: f32,
+    rank: usize,
+}
+
+#[derive(serde::Serialize)]
+struct Meta {
+    stl: String,
+    triangle_count: usize,
+    candidate_count: usize,
+    method: String,
+    weights: [f32; 6],
+    critical_angle_deg: f32,
+    refine_iters: u32,
+    exclude_unstable: bool,
+}
+
+#[derive(serde::Serialize)]
+struct CandidateOut {
+    index: usize,
+    direction: [f32; 3],
+    quaternion: [f32; 4],
+    overhang: f32,
+    footprint: f32,
+    max_cross: f32,
+    surface: f32,
+    height: f32,
+    shadowed: f32,
+    stable: bool,
+    stability_margin: f32,
+    contact_area: f32,
+    composite_score: f32,
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline helpers
+// ---------------------------------------------------------------------------
+
+fn score_one(
+    dir: &[f32; 3],
+    mesh: &orient::MeshData,
+    critical_angle_deg: f32,
+    refine_iters: u32,
+) -> ([f32; 4], [f32; 3], scoring::ScoreComponents, f32, stability::StabilityResult) {
+    let (nd, _) = normalise_dir(*dir);
+
+    let final_dir = if refine_iters > 0 {
+        let seed = orient::rng::seed_from_direction(&nd, 0);
+        let rng = orient::rng::Rng::new(seed);
+        let (best, _) = orient::refine_once(mesh, &nd, critical_angle_deg, refine_iters.min(500), rng);
+        best
+    } else {
+        nd
+    };
+
+    let c = scoring::score_components(&final_dir, mesh, critical_angle_deg, 64);
+    let shadowed = c.shadowed;
+    let stab = stability::check_stability(&final_dir, mesh);
+    let q = yaw::full_quaternion(&final_dir, mesh);
+
+    (q, final_dir, c, shadowed, stab)
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+fn main() -> Result<(), String> {
+    let args = Args::parse();
+
+    // 1. Read STL
+    let bytes = std::fs::read(&args.stl).map_err(|e| format!("Cannot read {}: {e}", args.stl.display()))?;
+
+    // 2. Parse, precompute, generate candidates
+    let mut od = prepare_data_native_with_repair(&bytes, &args.mode, args.dedupe_angle, args.fix_edges, args.weld_epsilon)?;
+
+    // Apply axis convention (z-up → y-up swap)
+    if args.convention == "z-up" {
+        for i in (0..od.positions.len()).step_by(3) {
+            let old_y = od.positions[i + 1];
+            od.positions[i + 1] = od.positions[i + 2];
+            od.positions[i + 2] = -old_y;
+        }
+        for i in (0..od.normals.len()).step_by(3) {
+            let old_y = od.normals[i + 1];
+            od.normals[i + 1] = od.normals[i + 2];
+            od.normals[i + 2] = -old_y;
+        }
+        for i in (0..od.directions.len()).step_by(3) {
+            let old_y = od.directions[i + 1];
+            od.directions[i + 1] = od.directions[i + 2];
+            od.directions[i + 2] = -old_y;
+        }
+    }
+
+    let target = if args.decimate == 0 { od.normals.len() / 3 } else { args.decimate };
+    let (dec_pos, dec_norm, dec_area) = decimate_for_score(&od.positions, &od.normals, &od.areas, target);
+    let mesh = reconstruct_mesh(&dec_pos, &dec_norm, &dec_area);
+
+    // 3. Hull (needed for stability)
+    let hull_verts = sample_for_hull(&mesh.vertices);
+    let _hull = hull::compute_hull(&hull_verts);
+
+    // 4. Reconstruct direction list from flat array
+    let n_dirs = od.directions.len() / 3;
+    let mut dirs: Vec<[f32; 3]> = od.directions
+        .chunks_exact(3)
+        .map(|c| [c[0], c[1], c[2]])
+        .collect();
+
+    // Prepend identity direction (as-loaded orientation)
+    if args.with_identity {
+        dirs.insert(0, [0.0, -1.0, 0.0]);
+    }
+
+    // 5. Score every direction
+    let crit = args.critical_angle;
+    let mut metrics: Vec<CandidateMetrics> = Vec::with_capacity(n_dirs);
+    let mut raw_q: Vec<[f32; 4]> = Vec::with_capacity(n_dirs);
+    let mut raw_dir: Vec<[f32; 3]> = Vec::with_capacity(n_dirs);
+    let mut raw_stable: Vec<bool> = Vec::with_capacity(n_dirs);
+
+    for d in &dirs {
+        let (q, fd, c, shadowed, stab) = score_one(d, &mesh, crit, args.refine_iters);
+        raw_q.push(q);
+        raw_dir.push(fd);
+        raw_stable.push(stab.stable);
+        metrics.push(CandidateMetrics {
+            overhang: c.overhang,
+            footprint: c.footprint,
+            max_cross: c.max_cross,
+            surface: c.surface_quality,
+            height: c.height,
+            shadowed,
+        });
+    }
+
+    // Recompute stability for all candidates
+    let mut stab_details: Vec<stability::StabilityResult> = Vec::with_capacity(n_dirs);
+    for d in &raw_dir {
+        let stab = stability::check_stability(d, &mesh);
+        stab_details.push(stab);
+    }
+
+    // 6. Rank (one method or all combos)
+    let (candidates_out, rankings, selected) = if args.all_rankings {
+        let mut rankings = Vec::new();
+
+        let primary_w = ScoreWeights { w_overhang: 1.0, w_footprint: 1.0, w_cross: 1.0, w_surface: 1.0, w_height: 1.0, w_shadowed: 1.0 };
+        let primary_w_sum: f32 = 6.0;
+        let primary_ranked = rank_by_weights(&metrics, &primary_w);
+
+        let mut display_lookup = vec![0.0f32; dirs.len()];
+        for &(idx, raw) in &primary_ranked {
+            display_lookup[idx] = to_display_score(raw, "weights", primary_w_sum);
+        }
+
+        for (profile_name, pw) in PROFILES {
+            let w = ScoreWeights {
+                w_overhang: pw[0], w_footprint: pw[1], w_cross: pw[2],
+                w_surface: pw[3], w_height: pw[4], w_shadowed: pw[5],
+            };
+            let pw_sum: f32 = pw.iter().sum();
+            for ranker_name in RANKERS {
+                let ranked = match *ranker_name {
+                    "weights" => rank_by_weights(&metrics, &w),
+                    "consensus" => rank_by_consensus(&metrics, &w),
+                    "topsis" => rank_by_topsis(&metrics, &w),
+                    _ => unreachable!(),
+                };
+                for (pos, &(idx, score)) in ranked.iter().enumerate() {
+                    rankings.push(RankingEntry {
+                        candidate: idx,
+                        profile: profile_name.to_string(),
+                        ranker: ranker_name.to_string(),
+                        composite_score: to_display_score(score, ranker_name, pw_sum),
+                        rank: pos + 1,
+                    });
+                }
+            }
+        }
+
+        let c_out: Vec<CandidateOut> = (0..dirs.len())
+            .map(|i| {
+                let m = &metrics[i];
+                CandidateOut {
+                    index: i,
+                    direction: raw_dir[i],
+                    quaternion: raw_q[i],
+                    overhang: m.overhang,
+                    footprint: m.footprint,
+                    max_cross: m.max_cross,
+                    surface: m.surface,
+                    height: m.height,
+                    shadowed: m.shadowed,
+                    stable: stab_details[i].stable,
+                    stability_margin: stab_details[i].margin,
+                    contact_area: stab_details[i].contact_area,
+                    composite_score: display_lookup[i],
+                }
+            })
+            .collect();
+
+        let scored: Vec<(usize, f32)> = primary_ranked.iter().map(|&(i, s)| (i, s)).collect();
+        let sel = selection::merge_candidates(
+            &scored, &raw_dir, &raw_stable,
+            args.exclude_unstable, args.max_candidates, args.min_angle,
+        );
+
+        (c_out, rankings, sel)
+    } else {
+        let w = ScoreWeights {
+            w_overhang: args.weights[0],
+            w_footprint: args.weights[1],
+            w_cross: args.weights[2],
+            w_surface: args.weights[3],
+            w_height: args.weights[4],
+            w_shadowed: args.weights[5],
+        };
+        let w_sum: f32 = args.weights.iter().sum();
+        let ranked = match args.method.as_str() {
+            "weights" => rank_by_weights(&metrics, &w),
+            "consensus" => rank_by_consensus(&metrics, &w),
+            "topsis" => rank_by_topsis(&metrics, &w),
+            other => return Err(format!("Unknown method '{other}'; expected weights, consensus, or topsis")),
+        };
+
+        let c_out: Vec<CandidateOut> = ranked
+            .iter()
+            .map(|&(idx, score)| {
+                CandidateOut {
+                    index: idx,
+                    direction: raw_dir[idx],
+                    quaternion: raw_q[idx],
+                    overhang: metrics[idx].overhang,
+                    footprint: metrics[idx].footprint,
+                    max_cross: metrics[idx].max_cross,
+                    surface: metrics[idx].surface,
+                    height: metrics[idx].height,
+                    shadowed: metrics[idx].shadowed,
+                    stable: stab_details[idx].stable,
+                    stability_margin: stab_details[idx].margin,
+                    contact_area: stab_details[idx].contact_area,
+                    composite_score: to_display_score(score, &args.method, w_sum),
+                }
+            })
+            .collect();
+
+        let scored: Vec<(usize, f32)> = ranked.iter().map(|&(i, s)| (i, s)).collect();
+        let sel = selection::merge_candidates(
+            &scored, &raw_dir, &raw_stable,
+            args.exclude_unstable, args.max_candidates, args.min_angle,
+        );
+
+        (c_out, Vec::new(), sel)
+    };
+
+    // 7. Assemble output
+    let out = CliOutput {
+        meta: Meta {
+            stl: args.stl.to_string_lossy().to_string(),
+            triangle_count: mesh.triangle_count,
+            candidate_count: dirs.len(),
+            method: args.method,
+            weights: args.weights,
+            critical_angle_deg: crit,
+            refine_iters: args.refine_iters,
+            exclude_unstable: args.exclude_unstable,
+        },
+        candidates: candidates_out,
+        rankings,
+        selected,
+    };
+
+    let json = serde_json::to_string_pretty(&out).map_err(|e| format!("Serialize error: {e}"))?;
+
+    match args.output {
+        Some(p) => std::fs::write(&p, &json).map_err(|e| format!("Write error: {e}")),
+        None => { println!("{json}"); Ok(()) }
+    }
+}
