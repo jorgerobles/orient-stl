@@ -501,9 +501,15 @@ export class AppController {
   private async runSupportGeneration(quaternion: [number, number, number, number]): Promise<void> {
     const lod = this.deps.state.get('lastOriData');
     if (!lod) return;
-    this.deps.progressLabel.textContent = 'Generating supports...';
+    console.log('[orient] runSupportGeneration: positions=', lod.positions.length, 'normals=', lod.normals.length, 'areas=', lod.areas.length);
+    this.deps.progressLabel.textContent = 'Decimating mesh for supports...';
     this.deps.progressContainer.style.display = 'block';
     this.deps.progressBar.className = 'progress-bar-fill indeterminate';
+
+    // Decimate mesh for support generation (100K faces max)
+    const SUPPORT_DECIMATE_TARGET = 100_000;
+    const decimated = decimateForScore(lod, SUPPORT_DECIMATE_TARGET);
+    console.log('[orient] Decimated for supports: positions=', decimated.positions.length);
 
     try {
       const supportConfig = this.deps.state.get('supportConfig');
@@ -533,9 +539,9 @@ export class AppController {
         worker.addEventListener('error', errorHandler);
         worker.postMessage({
           type: 'support',
-          positions: lod.positions,
-          normals: lod.normals,
-          areas: lod.areas,
+          positions: decimated.positions,
+          normals: decimated.normals,
+          areas: decimated.areas,
           direction,
           config: supportConfig,
         });

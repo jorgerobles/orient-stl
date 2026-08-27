@@ -33,9 +33,24 @@ pub fn generate_supports(
     // 1. Detect islands
     let islands = island::detect_islands(positions, normals, direction, &config);
 
+    // Compute mesh height range along build direction for raft plane
+    let dir_array = [direction[0], direction[1], direction[2]];
+    let mut min_height = f32::INFINITY;
+    let tri_count = positions.len() / 9;
+    for i in 0..tri_count {
+        let base = i * 9;
+        for j in 0..3 {
+            let x = positions[base + j * 3];
+            let y = positions[base + j * 3 + 1];
+            let z = positions[base + j * 3 + 2];
+            let height = -(x * dir_array[0] + y * dir_array[1] + z * dir_array[2]);
+            min_height = min_height.min(height);
+        }
+    }
+    let raft_height = min_height; // Raft plane at bottom of mesh
+
     // 2. For each island: classify volume, place contacts
     let mut all_contacts: Vec<(types::ContactPoint, f32)> = Vec::new();
-    let dir_array = [direction[0], direction[1], direction[2]];
     for island in &islands {
         // Convert centroid from grid cell coordinates to world coordinates
         let world_centroid = [
@@ -57,6 +72,7 @@ pub fn generate_supports(
             &dir_array,
             &stype,
             &config,
+            raft_height,
         );
         for c in contacts {
             all_contacts.push((c, vol));

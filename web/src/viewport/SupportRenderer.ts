@@ -43,7 +43,36 @@ export class SupportRenderer {
 
     for (const support of result.supports) {
       this.renderColumn(support);
+      this.renderDebugSphere(support);
     }
+  }
+
+  private renderDebugSphere(support: Support): void {
+    const { contact } = support;
+    const pos = new THREE.Vector3(...contact.position).add(this.offset);
+    const base = new THREE.Vector3(...contact.base).add(this.offset);
+
+    // Also log the mesh bounding box for comparison
+    const parent = this.parent as any;
+    const bbox = parent.children?.[0]?.geometry?.boundingBox;
+
+    console.log('[DEBUG] pos=' + pos.toArray() + ' base=' + base.toArray() + ' offset=' + this.offset.toArray() + ' bbox=' + (bbox ? bbox.min.toArray() + '→' + bbox.max.toArray() : 'none'));
+
+    // Large red sphere at contact point
+    const tipGeo = new THREE.SphereGeometry(2, 16, 16);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const tipSphere = new THREE.Mesh(tipGeo, tipMat);
+    tipSphere.position.copy(pos);
+    this.group.add(tipSphere);
+    this.columnMeshes.push(tipSphere);
+
+    // Large blue sphere at base point
+    const baseGeo = new THREE.SphereGeometry(2, 16, 16);
+    const baseMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+    const baseSphere = new THREE.Mesh(baseGeo, baseMat);
+    baseSphere.position.copy(base);
+    this.group.add(baseSphere);
+    this.columnMeshes.push(baseSphere);
   }
 
   private renderColumn(support: Support): void {

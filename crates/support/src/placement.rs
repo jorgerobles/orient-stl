@@ -34,6 +34,7 @@ pub fn place_contacts(
     direction: &[f32; 3],
     support_type: &SupportType,
     config: &SupportConfig,
+    raft_height: f32,
 ) -> Vec<ContactPoint> {
     if island.pixels.is_empty() {
         return Vec::new();
@@ -79,6 +80,7 @@ pub fn place_contacts(
                 tip_diameter,
                 penetration,
                 config,
+                raft_height,
             ) {
                 contacts.push(contact);
                 placed.push([world_x, world_y]);
@@ -117,6 +119,7 @@ pub fn place_contacts(
             tip_diameter,
             penetration,
             config,
+            raft_height,
         ) {
             contacts.push(contact);
             placed.push([world_x, world_y]);
@@ -194,6 +197,7 @@ fn create_contact_point(
     tip_diameter: f32,
     penetration: f32,
     config: &SupportConfig,
+    raft_height: f32,
 ) -> Option<ContactPoint> {
     let tri_count = positions.len() / 9;
     if tri_count == 0 {
@@ -216,9 +220,9 @@ fn create_contact_point(
         direction[2] / dir_len,
     ];
 
-    // Cast ray downward from above to find mesh surface
+    // Cast ray downward (opposite to build direction) from above to find mesh surface
     let ray_origin = [point_2d[0], point_2d[1], island.z_max + 1.0];
-    let ray_dir = [dir[0], dir[1], dir[2]]; // along build direction (downward)
+    let ray_dir = [-dir[0], -dir[1], -dir[2]]; // opposite to build direction (toward build plate)
 
     for i in 0..tri_count {
         let base = i * 9;
@@ -253,11 +257,22 @@ fn create_contact_point(
         return None;
     }
 
-    // Compute base point (on raft plane, offset from contact point)
+    // Normalize direction
+    let dir_len = (direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]).sqrt();
+    let dir = if dir_len > 1e-10 {
+        [direction[0] / dir_len, direction[1] / dir_len, direction[2] / dir_len]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+
+    // Project contact point down along build direction to raft plane
+    // contact_height = dot(contact, -dir), raft_height is the bottom
+    let contact_height = -(best_point[0] * dir[0] + best_point[1] * dir[1] + best_point[2] * dir[2]);
+    let distance_to_raft = contact_height - raft_height;
     let base = [
-        best_point[0],
-        best_point[1],
-        best_point[2] - config.raft_thickness,
+        best_point[0] + dir[0] * distance_to_raft,
+        best_point[1] + dir[1] * distance_to_raft,
+        best_point[2] + dir[2] * distance_to_raft,
     ];
 
     Some(ContactPoint {
@@ -367,6 +382,7 @@ mod tests {
             &direction,
             &SupportType::Medium,
             &config,
+            -1.0, // raft_height: bottom of mesh
         );
 
         assert!(!contacts.is_empty(), "should place at least one contact");
@@ -390,6 +406,7 @@ mod tests {
             &direction,
             &SupportType::Light,
             &config,
+            0.0, // raft_height
         );
 
         for contact in &contacts {
@@ -423,6 +440,7 @@ mod tests {
             &[0.0, 0.0, -1.0],
             &SupportType::Light,
             &config,
+            0.0, // raft_height
         );
 
         assert!(contacts.is_empty());
