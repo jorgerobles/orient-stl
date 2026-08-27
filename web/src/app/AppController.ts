@@ -152,6 +152,10 @@ export class AppController {
       deps.state.set('generateSupports', enabled);
       deps.state.set('supportConfig', config);
       deps.viewport.setSupportVisible(enabled);
+      const exportBtn = document.getElementById('export-btn');
+      if (exportBtn) {
+        exportBtn.textContent = enabled ? 'Export STL with Supports' : 'Export STL';
+      }
     });
 
     deps.candidateList.onSelect((i) => this.showCandidate(i));
@@ -544,7 +548,10 @@ export class AppController {
     const conv = this.deps.state.get('loadConvention');
     const rotated = rotatePositions(lod.positions, q);
     const frameFixed = inverseConvention(rotated, conv);
-    exportSTL(frameFixed, this.deps.state.get('stlName'), this.deps.state.get('currentIndex') + 1);
+    const supportRenderer = this.deps.state.get('generateSupports')
+      ? this.deps.viewport.getSupportRenderer()
+      : null;
+    exportSTL(frameFixed, this.deps.state.get('stlName'), this.deps.state.get('currentIndex') + 1, supportRenderer);
   }
 
   // ── Config Persistence ──

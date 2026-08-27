@@ -334,6 +334,10 @@ export class Viewport {
     return this.supportRenderer.isVisible;
   }
 
+  getSupportRenderer(): SupportRenderer {
+    return this.supportRenderer;
+  }
+
   dispose(): void {
     cancelAnimationFrame(this.animationId);
     this.gizmo?.dispose();

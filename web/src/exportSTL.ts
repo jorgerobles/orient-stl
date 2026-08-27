@@ -1,9 +1,93 @@
+import * as THREE from 'three';
+import type { SupportRenderer } from './viewport/SupportRenderer';
+
 export function exportSTL(
   positions: Float32Array,
   name: string,
   candidateIndex: number,
+  supportRenderer?: SupportRenderer | null,
 ): void {
-  const triCount = positions.length / 9;
+  const allPositions: number[] = [];
+
+  for (let i = 0; i < positions.length; i++) {
+    allPositions.push(positions[i]);
+  }
+
+  if (supportRenderer?.isVisible) {
+    for (const column of supportRenderer.getColumnMeshes()) {
+      const geo = column.geometry;
+      const posAttr = geo.attributes.position as THREE.BufferAttribute;
+      const idx = geo.index;
+      column.updateMatrixWorld();
+      const matrix = column.matrixWorld;
+
+      if (idx) {
+        for (let i = 0; i < idx.count; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            const vi = idx.getX(i + j);
+            const v = new THREE.Vector3(
+              posAttr.getX(vi),
+              posAttr.getY(vi),
+              posAttr.getZ(vi),
+            );
+            v.applyMatrix4(matrix);
+            allPositions.push(v.x, v.y, v.z);
+          }
+        }
+      } else {
+        for (let i = 0; i < posAttr.count; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            const v = new THREE.Vector3(
+              posAttr.getX(i + j),
+              posAttr.getY(i + j),
+              posAttr.getZ(i + j),
+            );
+            v.applyMatrix4(matrix);
+            allPositions.push(v.x, v.y, v.z);
+          }
+        }
+      }
+    }
+
+    const raft = supportRenderer.getRaftMesh();
+    if (raft) {
+      const geo = raft.geometry;
+      const posAttr = geo.attributes.position as THREE.BufferAttribute;
+      const idx = geo.index;
+      raft.updateMatrixWorld();
+      const matrix = raft.matrixWorld;
+
+      if (idx) {
+        for (let i = 0; i < idx.count; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            const vi = idx.getX(i + j);
+            const v = new THREE.Vector3(
+              posAttr.getX(vi),
+              posAttr.getY(vi),
+              posAttr.getZ(vi),
+            );
+            v.applyMatrix4(matrix);
+            allPositions.push(v.x, v.y, v.z);
+          }
+        }
+      } else {
+        for (let i = 0; i < posAttr.count; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            const v = new THREE.Vector3(
+              posAttr.getX(i + j),
+              posAttr.getY(i + j),
+              posAttr.getZ(i + j),
+            );
+            v.applyMatrix4(matrix);
+            allPositions.push(v.x, v.y, v.z);
+          }
+        }
+      }
+    }
+  }
+
+  const mergedPositions = new Float32Array(allPositions);
+  const triCount = mergedPositions.length / 9;
   const header = new Uint8Array(80);
   const headerStr = `Orient STL candidate #${candidateIndex}`;
   for (let i = 0; i < headerStr.length && i < 80; i++) {
@@ -16,9 +100,9 @@ export function exportSTL(
 
   for (let t = 0; t < triCount; t++) {
     const base = t * 9;
-    const a: [number, number, number] = [positions[base], positions[base + 1], positions[base + 2]];
-    const b: [number, number, number] = [positions[base + 3], positions[base + 4], positions[base + 5]];
-    const c: [number, number, number] = [positions[base + 6], positions[base + 7], positions[base + 8]];
+    const a: [number, number, number] = [mergedPositions[base], mergedPositions[base + 1], mergedPositions[base + 2]];
+    const b: [number, number, number] = [mergedPositions[base + 3], mergedPositions[base + 4], mergedPositions[base + 5]];
+    const c: [number, number, number] = [mergedPositions[base + 6], mergedPositions[base + 7], mergedPositions[base + 8]];
     const ex = b[0] - a[0], ey = b[1] - a[1], ez = b[2] - a[2];
     const fx = c[0] - a[0], fy = c[1] - a[1], fz = c[2] - a[2];
     let nx = ey * fz - ez * fy;
@@ -47,7 +131,8 @@ export function exportSTL(
   const link = document.createElement('a');
   link.href = url;
   const baseName = name.replace(/\.stl$/i, '');
-  link.download = `${baseName}_orient_${candidateIndex}.stl`;
+  const suffix = supportRenderer?.isVisible ? '_with_supports' : '';
+  link.download = `${baseName}_orient_${candidateIndex}${suffix}.stl`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

@@ -120,6 +120,14 @@ export class SupportRenderer {
     return this._visible;
   }
 
+  getColumnMeshes(): THREE.Mesh[] {
+    return this.columnMeshes;
+  }
+
+  getRaftMesh(): THREE.Mesh | null {
+    return this.raftMesh;
+  }
+
   dispose(): void {
     this.clear();
     this.scene.remove(this.group);
