@@ -279,6 +279,9 @@ export class AppController {
     const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {}, generateSupports, supportConfig);
     if (!data || data.positions.length === 0) return null;
     const conv = this.deps.state.get('loadConvention');
+    if (data.supports) {
+      this.deps.state.set('supports', data.supports);
+    }
     return {
       positions: applyConvention(data.positions, conv),
       normals: applyConvention(data.normals, conv),
@@ -482,6 +485,12 @@ export class AppController {
     this.deps.viewport.setCriticalAngle(this.deps.state.get('config').criticalAngleDeg);
     this.deps.viewport.showCandidate(candidates[0].quaternion);
     this.updateLiveScore(this.deps.viewport.getMeshQuaternion());
+
+    const supports = this.deps.state.get('supports');
+    if (supports && this.deps.state.get('generateSupports')) {
+      this.deps.viewport.renderSupports(supports);
+      this.deps.viewport.setSupportVisible(true);
+    }
   }
 
   cancelCompute(): void {
