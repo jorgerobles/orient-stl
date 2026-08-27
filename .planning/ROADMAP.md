@@ -167,8 +167,8 @@ Plans:
 | 5. Consolidate All Calculations in Rust | 4/4 | ✅ Complete | 2026-07-13 |
 | 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
 | 6. Frontend Architecture Refactor | 4/4 | ✅ Complete | 2026-07-14 |
-| 7. Correctness Fixes + H11 Scoring | 0/4 | In Progress | — |
-| 8. Workspace Split (Unix-Style WASM) | 0/3 | ⏳ Planned | — |
+| 7. Correctness Fixes + H11 Scoring | 5/5 | ✅ Complete | 2026-08-27 |
+| 8. Workspace Split (Unix-Style WASM) | 3/3 | ✅ Complete | 2026-08-27 |
 | 9. Support Module | 0/2 | ⏳ Planned | — |
 | 10. UI Integration (Supports) | 0/3 | ⏳ Planned | — |
 
@@ -217,22 +217,23 @@ Plans:
 **Requirements**: (none — review-driven correctness + resin-scoring completion)
 **Success Criteria** (what must be TRUE):
 
-  1. `refine_once` perturbation is perpendicular to the current direction (|dot| < 1e-5), built via `perpendicular_basis` — no spurious radial component
-  2. `center_of_mass` is area-weighted (Σ area·centroid / Σ area), not the raw vertex centroid; `check_stability` uses it; the unused `hull` param is removed
-  3. The dead yaw subgraph (`compute_default_yaw` + 7 dependents) is deleted from candidates.rs
-  4. `ScoreWeights` (Rust + TS) carries `w_shadowed`; `score_components`/`compute_norm_bounds`/`rank_candidates`/`score_direction` carry shadowed end-to-end
-  5. `rank_by_weights_with_bounds` (and consensus/topsis) normalize shadowed as a COST and add `w_shadowed * shn` to the composite
-  6. All 8 profile JSONs define `wShadowed`; resin-biased penalizes cavity-forming orientations
-  7. `cargo test` passes; WASM rebuilt; `make type-check` + `make test` pass
+  1. `refine_once` perturbation is perpendicular to the current direction (|dot| < 1e-5), built via `perpendicular_basis` — no spurious radial component ✅
+  2. `center_of_mass` is area-weighted (Σ area·centroid / Σ area), not the raw vertex centroid; `check_stability` uses it; the unused `hull` param is removed ✅
+  3. The dead yaw subgraph (`compute_default_yaw` + 7 dependents) is deleted from candidates.rs ✅
+  4. `ScoreWeights` (Rust + TS) carries `w_shadowed`; `score_components`/`compute_norm_bounds`/`rank_candidates`/`score_direction` carry shadowed end-to-end ✅
+  5. `rank_by_weights_with_bounds` (and consensus/topsis) normalize shadowed as a COST and add `w_shadowed * shn` to the composite ✅
+  6. All 8 profile JSONs define `wShadowed`; resin-biased penalizes cavity-forming orientations ✅
+  7. `cargo test` passes; WASM rebuilt; `make type-check` + `make test` pass ✅
 
-**Plans:** 4 plans (waves: 1–3 parallel, 4 serialized after)
+**Plans:** 5/5 plans complete
 
 Plans:
 
-- [ ] 07-01-PLAN.md — Fix non-tangent perturbation in refine_once (reuse perpendicular_basis)
-- [ ] 07-02-PLAN.md — Area-weighted center of mass + remove unused hull param from check_stability
-- [ ] 07-03-PLAN.md — Delete dead yaw subgraph in candidates.rs (compute_default_yaw + chain)
-- [ ] 07-04-PLAN.md — Wire H11 shadowed-overhang into composite score (Rust ranking + WASM exports + TS + profiles)
+- [x] 07-01-PLAN.md — Fix non-tangent perturbation in refine_once (reuse perpendicular_basis)
+- [x] 07-02-PLAN.md — Area-weighted center of mass + remove unused hull param from check_stability
+- [x] 07-03-PLAN.md — Delete dead yaw subgraph in candidates.rs (compute_default_yaw + chain)
+- [x] 07-04-PLAN.md — Wire H11 shadowed-overhang into composite score (Rust ranking + WASM exports + TS + profiles)
+- [x] 07-05-PLAN.md — Normalize winding in repair pipeline (edge-adjacency BFS + centroid voting)
 
 ### Phase 8: Workspace Split (Unix-Style WASM Modules)
 
@@ -242,22 +243,22 @@ Plans:
 **Requirements**: (none — architecture restructuring)
 **Success Criteria** (what must be TRUE):
 
-  1. 5 independent crates under `crates/`: stl-parse, stl-repair, mesher, orient, geometry-kernel
-  2. geometry-kernel is rlib-only (no cdylib, no WASM bindings)
-  3. Each crate builds to its own WASM binary
-  4. JS workers load each WASM module independently
-  5. `pipeline.ts` chains workers: parse → repair → mesh → orient
-  6. All existing tests pass (Rust + TypeScript)
-  7. CLI binary works with new crate structure
-  8. App behavior is identical to pre-split
+  1. 5 independent crates under `crates/`: stl-parse, stl-repair, mesher, orient, geometry-kernel ✅
+  2. geometry-kernel is rlib-only (no cdylib, no WASM bindings) ✅
+  3. Each crate builds to its own WASM binary ✅
+  4. JS workers load each WASM module independently ✅
+  5. `pipeline.ts` chains workers: parse → repair → mesh → orient ✅
+  6. All existing tests pass (Rust + TypeScript) ✅
+  7. CLI binary works with new crate structure ✅
+  8. App behavior is identical to pre-split ✅
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 
-- [ ] 08-01-PLAN.md — Create workspace root + crate scaffolding + move source files
-- [ ] 08-02-PLAN.md — Create per-module WASM workers + pipeline.ts + update Makefile
-- [ ] 08-03-PLAN.md — Delete old core/ + fix imports + full test verification
+- [x] 08-01-PLAN.md — Create workspace root + crate scaffolding + move source files
+- [x] 08-02-PLAN.md — Create per-module WASM workers + pipeline.ts + update Makefile
+- [x] 08-03-PLAN.md — Delete old core/ + fix imports + full test verification
 
 ### Phase 9: Support Module
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Phase 8 complete — workspace split landed
+stopped_at: Phase 7 complete — correctness fixes + H11 scoring
 last_updated: "2026-08-27T00:00:00.000Z"
-last_activity: 2026-08-27 -- Phase 8: workspace split into independent WASM crates
+last_activity: 2026-08-27 -- Phase 7: correctness fixes + H11 shadowed-overhang scoring
 progress:
-  total_phases: 8
-  completed_phases: 7
-  total_plans: 24
-  completed_plans: 20
-  percent: 83
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 29
+  completed_plans: 25
+  percent: 86
 ---
 
 # Project State
@@ -21,22 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 8 complete — workspace split into independent WASM crates (stl-parse, stl-repair, mesher, orient, geometry-kernel)
+**Current focus:** Phase 7 complete — correctness fixes + H11 shadowed-overhang scoring wired end-to-end
 
 ## Current Position
 
-Phase: 08 — Workspace Split (complete)
-Plan: 3/3 (all complete)
-Status: Complete
+Phase: 09 — Support Module (ready to plan)
+Plan: 0/2 (pending)
+Status: Ready
 Last activity: 2026-08-27
 
-### Phase 8 status
+### Phase 7 status
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| 08-01 Workspace root + crate scaffolding | ✅ Complete | 5 crates under crates/, geometry-kernel rlib-only, 105 tests pass |
-| 08-02 JS workers + pipeline | ✅ Complete | 4 WASM workers, pipeline.ts orchestrator, Makefile updated |
-| 08-03 Cleanup + verify | ✅ Complete | Orphan files deleted, CLI composability verified, full test suite green |
+| 07-01 Fix non-tangent perturbation | ✅ Complete | `tangent_perturbation` uses `perpendicular_basis`, ad-hoc formula removed |
+| 07-02 Area-weighted center of mass | ✅ Complete | Σ(area·centroid)/Σ(area), unused `hull` param removed |
+| 07-03 Delete dead yaw subgraph | ✅ Complete | `compute_default_yaw` + 7 functions removed |
+| 07-04 Wire H11 shadowed-overhang | ✅ Complete | 6-component scoring across Rust + TS + profiles + WASM |
+| 07-05 Normalize winding | ✅ Complete | Edge-adjacency BFS for inverted normal detection |
 
 ### Phase 6 status (final)
 
@@ -51,7 +53,7 @@ Last activity: 2026-08-27
 
 **Velocity:**
 
-- Total plans completed: 17 (all phases)
+- Total plans completed: 25 (all phases)
 - Average duration: —
 - Total execution time: —
 
@@ -65,6 +67,8 @@ Last activity: 2026-08-27
 | 4. v3 UX Polish | 0/3 | [-] Dropped (YAGNI) | 2026-07-14 |
 | 6. Frontend Architecture Refactor | 4/4 ✅ | — | 2026-07-14 |
 | 3.5 Scoring Expansion & Refinement | 2/2 ✅ | 32 min | 3 tasks + backfill |
+| 7. Correctness Fixes + H11 Scoring | 5/5 ✅ | — | 2026-08-27 |
+| 8. Workspace Split | 3/3 ✅ | — | 2026-08-27 |
 
 ## Accumulated Context
 
@@ -109,6 +113,11 @@ Recent decisions affecting current work:
 - **[Wave 2]** All CLI defaults moved to named constants at top of main.rs.
 - **[Wave 2]** Scoring loop confirmed as the real performance bottleneck (O(triangles × candidates × refine)). Not regressed by repair/decimate.
 - **[Wave 2]** Warning cleanups: 6 Rust compiler warnings fixed (unused vars, dead_code, snake_case), merged via dedicated branch.
+- **[Phase 7]** `tangent_perturbation` helper uses `perpendicular_basis` for truly perpendicular perturbation vectors in hill-climb refinement
+- **[Phase 7]** `center_of_mass` now computes area-weighted triangle-centroid average (Σ(area·centroid)/Σ(area)) instead of raw vertex centroid
+- **[Phase 7]** Dead yaw subgraph deleted: `compute_default_yaw` + 7 dependent functions removed from candidates.rs
+- **[Phase 7]** H11 shadowed-overhang wired as 6th cost component in all 3 rankers (weighted, consensus, TOPSIS)
+- **[Phase 7]** `normalize_winding` uses edge-adjacency BFS + centroid voting for inverted normal detection
 
 ### Pending Todos
 
@@ -128,8 +137,8 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-15T01:00:00.000Z
-Stopped at: Phase 7 wave 2 — repair/decimate/winding landed on master
+Last session: 2026-08-27T00:00:00.000Z
+Stopped at: Phase 7 complete — all 5 plans verified, ready for Phase 9
 Resume file: None
 
 ### Infrastructure State
