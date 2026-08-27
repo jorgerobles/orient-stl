@@ -262,14 +262,22 @@ pub fn detect_islands(
     let mut all_island_pixels: HashSet<(u32, u32)> = HashSet::new();
     let mut island_z_min: f32 = f32::INFINITY;
     let mut island_z_max: f32 = f32::NEG_INFINITY;
+    let mut grid_origin: [f32; 2] = [0.0; 2];
+    let mut grid_origin_set = false;
 
     for layer in 0..layer_count {
         let z = z_min + layer as f32 * config.layer_height;
         let z_above = z + config.layer_height;
 
         // Build grids at current and next layer
-        let (grid_z, _, _) = build_grid(positions, z, config.cell_size);
+        let (grid_z, grid_min, _) = build_grid(positions, z, config.cell_size);
         let (grid_above, _, _) = build_grid(positions, z_above, config.cell_size);
+
+        // Capture grid origin from first non-empty grid
+        if !grid_origin_set && !grid_z.is_empty() {
+            grid_origin = grid_min;
+            grid_origin_set = true;
+        }
 
         // Find island pixels: cells in grid_z not connected to grid_above
         for &cell in &grid_z {
@@ -330,6 +338,7 @@ pub fn detect_islands(
 
         islands.push(Island {
             pixels: component,
+            grid_origin,
             centroid,
             area,
             z_min: island_z_min,

@@ -37,11 +37,16 @@ pub fn generate_supports(
     let mut all_contacts: Vec<(types::ContactPoint, f32)> = Vec::new();
     let dir_array = [direction[0], direction[1], direction[2]];
     for island in &islands {
+        // Convert centroid from grid cell coordinates to world coordinates
+        let world_centroid = [
+            island.centroid[0] * config.cell_size + island.grid_origin[0],
+            island.centroid[1] * config.cell_size + island.grid_origin[1],
+        ];
         let vol = volume::compute_volume_above(
             positions,
             normals,
             areas,
-            &island.centroid,
+            &world_centroid,
             &dir_array,
         );
         let stype = volume::classify_support_type(vol, &config);

@@ -72,7 +72,9 @@ pub enum SupportType {
 pub struct Island {
     /// Grid coordinates of island pixels (cell_x, cell_y).
     pub pixels: Vec<(u32, u32)>,
-    /// 2D centroid of the island in world units.
+    /// World-space origin of the rasterization grid (grid_min_x, grid_min_y).
+    pub grid_origin: [f32; 2],
+    /// 2D centroid of the island in grid cell coordinates.
     pub centroid: [f32; 2],
     /// Estimated area of the island in mm².
     pub area: f32,

@@ -64,8 +64,8 @@ pub fn place_contacts(
     // First, seed edge points
     let edge_pixels = find_edge_pixels(island);
     for &pixel in &edge_pixels {
-        let world_x = pixel.0 as f32 * config.cell_size;
-        let world_y = pixel.1 as f32 * config.cell_size;
+        let world_x = pixel.0 as f32 * config.cell_size + island.grid_origin[0];
+        let world_y = pixel.1 as f32 * config.cell_size + island.grid_origin[1];
 
         // Check minimum distance from existing points
         if !too_close(&[world_x, world_y], &placed, min_spacing) {
@@ -94,8 +94,8 @@ pub fn place_contacts(
         let pixel_idx = (rng.next_f32() * island.pixels.len() as f32) as usize;
         let pixel = island.pixels[pixel_idx.min(island.pixels.len() - 1)];
 
-        let world_x = pixel.0 as f32 * config.cell_size + rng.next_f32() * config.cell_size;
-        let world_y = pixel.1 as f32 * config.cell_size + rng.next_f32() * config.cell_size;
+        let world_x = pixel.0 as f32 * config.cell_size + island.grid_origin[0] + rng.next_f32() * config.cell_size;
+        let world_y = pixel.1 as f32 * config.cell_size + island.grid_origin[1] + rng.next_f32() * config.cell_size;
 
         // Check if point is within island bounds (approximate)
         if !within_island_bounds([world_x, world_y], island, config) {
@@ -171,8 +171,8 @@ fn within_island_bounds(point: [f32; 2], island: &Island, config: &SupportConfig
     let mut max_y = f32::NEG_INFINITY;
 
     for &(x, y) in &island.pixels {
-        let wx = x as f32 * config.cell_size;
-        let wy = y as f32 * config.cell_size;
+        let wx = x as f32 * config.cell_size + island.grid_origin[0];
+        let wy = y as f32 * config.cell_size + island.grid_origin[1];
         min_x = min_x.min(wx);
         max_x = max_x.max(wx);
         min_y = min_y.min(wy);
@@ -332,6 +332,7 @@ mod tests {
     fn test_island() -> Island {
         Island {
             pixels: vec![(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)],
+            grid_origin: [0.0, 0.0],
             centroid: [1.0, 0.5],
             area: 6.0 * 0.5 * 0.5, // 6 cells × 0.5mm × 0.5mm
             z_min: 0.0,
@@ -344,6 +345,7 @@ mod tests {
         // Use a larger island so Medium spacing (2.0mm min) can place contacts
         let island = Island {
             pixels: (0..20).flat_map(|x| (0..10).map(move |y| (x, y))).collect(),
+            grid_origin: [0.0, 0.0],
             centroid: [10.0, 5.0],
             area: 200.0 * 0.5 * 0.5, // 200 cells × 0.5mm × 0.5mm
             z_min: 0.0,
@@ -406,6 +408,7 @@ mod tests {
     fn empty_island_returns_no_contacts() {
         let island = Island {
             pixels: vec![],
+            grid_origin: [0.0, 0.0],
             centroid: [0.0, 0.0],
             area: 0.0,
             z_min: 0.0,
@@ -429,6 +432,7 @@ mod tests {
     fn find_edge_pixels_identifies_boundary() {
         let island = Island {
             pixels: vec![(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)],
+            grid_origin: [0.0, 0.0],
             centroid: [1.0, 0.5],
             area: 1.5,
             z_min: 0.0,
