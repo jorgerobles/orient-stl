@@ -6,12 +6,12 @@ import type { CandidateList } from '../views/CandidateList';
 import { AppState } from './AppState';
 import type { OriData, Candidate, ComputeConfig, WorkerMessage, WorkerRequest } from '../types';
 import { defaultConfig } from '../types';
-import { initWasm, loadSTLBytes, prepareData, loadWithProgress } from '../loadSTL';
+import { loadSTLBytes, loadWithProgress } from '../loadSTL';
 import { decimateForScore } from '../compute';
 import { applyConvention, inverseConvention } from '../convention';
 import type { LoadConvention } from '../convention';
 import { dirFromQuat } from '../quaternion';
-import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds, count_boundary_edges_wasm } from '../../pkg/orient_core.js';
+import { score_direction, compute_norm_bounds as wasm_compute_norm_bounds, count_boundary_edges_wasm } from '../../pkg/orient/orient.js';
 import { WEIGHT_PRESETS } from '../profiles';
 import { exportSTL } from '../exportSTL';
 import { rotatePositions } from '../rotate';
@@ -158,14 +158,13 @@ export class AppController {
   }
 
   async boot(): Promise<void> {
-    this.deps.statusEl.textContent = 'Initializing WASM...';
+    this.deps.statusEl.textContent = 'Initializing...';
     this.loadConfig();
     this.deps.viewport.setCriticalAngle(this.deps.state.get('config').criticalAngleDeg);
     try {
-      await initWasm();
       this.deps.statusEl.textContent = 'Ready \u2014 load an STL file';
     } catch (err) {
-      this.deps.statusEl.textContent = 'WASM init failed: ' + err;
+      this.deps.statusEl.textContent = 'Init failed: ' + err;
       console.error(err);
     }
   }
@@ -244,19 +243,17 @@ export class AppController {
 
   // ── Internal ──
 
-  private parseCurrentData(): OriData | null {
+  private async parseCurrentData(): Promise<OriData | null> {
     if (!this.lastFileBytes) return null;
-    const config = this.deps.state.get('config');
-    const raw = prepareData(this.lastFileBytes, config as unknown as Record<string, unknown>) as unknown as {
-      positions: number[]; normals: number[]; areas: number[]; directions: number[];
-    };
-    if (raw.positions.length === 0 || raw.directions.length === 0) return null;
+    const autoRepair = this.deps.state.get('config').autoRepair;
+    const data = await loadWithProgress(this.lastFileBytes, autoRepair, () => {});
+    if (!data || data.positions.length === 0) return null;
     const conv = this.deps.state.get('loadConvention');
     return {
-      positions: applyConvention(new Float32Array(raw.positions), conv),
-      normals: applyConvention(new Float32Array(raw.normals), conv),
-      areas: new Float32Array(raw.areas),
-      directions: applyConvention(new Float32Array(raw.directions), conv),
+      positions: applyConvention(data.positions, conv),
+      normals: applyConvention(data.normals, conv),
+      areas: data.areas,
+      directions: data.directions.length > 0 ? applyConvention(data.directions, conv) : data.directions,
     };
   }
 
@@ -481,7 +478,7 @@ export class AppController {
     this.deps.progressLabel.textContent = 'Reparsing STL...';
     this.deps.progressBar.className = 'progress-bar-fill indeterminate';
     await paint();
-    const data = this.parseCurrentData();
+    const data = await this.parseCurrentData();
     if (!data) {
       this.deps.statusEl.textContent = 'No data to recalculate';
       this.deps.progressContainer.style.display = 'none';

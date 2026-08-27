@@ -3,12 +3,6 @@
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-#[cfg(feature = "wasm")]
-#[wasm_bindgen(start)]
-pub fn init() {
-    console_error_panic_hook::set_once();
-}
-
 pub fn repair_positions(positions: &mut Vec<f32>, weld_epsilon: f32, max_hole_edges: u32) {
     geometry_kernel::flat::repair_mesh(positions);
     geometry_kernel::flat::normalize_winding(positions);

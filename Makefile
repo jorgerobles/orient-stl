@@ -1,18 +1,30 @@
-WASM_SRC  := core
 WEB_DIR   := web
 DIST_DIR  := $(WEB_DIR)/dist
 PKG_DIR   := $(WEB_DIR)/pkg
 GH_BRANCH := gh-pages
 TMP_DEPLOY:= /tmp/orient-stl-deploy
 
-.PHONY: all build wasm dev deploy commit test type-check clean
+.PHONY: all build wasm wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient dev deploy commit test type-check clean
 
 all: build
 
-# ─── Build ────────────────────────────────────────────────────
+# ─── WASM Build (per-crate) ───────────────────────────────────
 
-wasm:
-	wasm-pack build --target bundler --out-dir ../$(PKG_DIR) $(WASM_SRC)
+wasm-stl-parse:
+	wasm-pack build crates/stl-parse --target bundler --out-dir ../../$(PKG_DIR)/stl-parse
+
+wasm-stl-repair:
+	wasm-pack build crates/stl-repair --target bundler --out-dir ../../$(PKG_DIR)/stl-repair
+
+wasm-mesher:
+	wasm-pack build crates/mesher --target bundler --out-dir ../../$(PKG_DIR)/mesher
+
+wasm-orient:
+	wasm-pack build crates/orient --target bundler --out-dir ../../$(PKG_DIR)/orient
+
+wasm: wasm-stl-parse wasm-stl-repair wasm-mesher wasm-orient
+
+# ─── Build ────────────────────────────────────────────────────
 
 build: wasm
 	cd $(WEB_DIR) && npm run build

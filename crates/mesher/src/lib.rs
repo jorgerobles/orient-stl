@@ -3,12 +3,6 @@
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-#[cfg(feature = "wasm")]
-#[wasm_bindgen(start)]
-pub fn init() {
-    console_error_panic_hook::set_once();
-}
-
 #[cfg_attr(feature = "wasm", derive(serde::Serialize))]
 pub struct MeshOutput {
     pub positions: Vec<f32>,

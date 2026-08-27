@@ -69,7 +69,7 @@ function boot(): void {
     configPanel,
     scorePanel,
     candidateList,
-    workerFactory: () => new Worker(new URL('./orient.worker.ts', import.meta.url), { type: 'module' }),
+    workerFactory: () => new Worker(new URL('./workers/orient.worker.ts', import.meta.url), { type: 'module' }),
     statusEl: document.getElementById('status')!,
     progressContainer: document.getElementById('progress-container')!,
     progressBar: document.getElementById('progress-bar')!,

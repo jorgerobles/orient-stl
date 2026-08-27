@@ -3,12 +3,6 @@ use std::io::Cursor;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
-#[cfg(feature = "wasm")]
-#[wasm_bindgen(start)]
-pub fn init() {
-    console_error_panic_hook::set_once();
-}
-
 pub fn parse_stl(bytes: &[u8]) -> Result<Vec<[f32; 3]>, String> {
     let mut cursor = Cursor::new(bytes);
     let mesh = stl_io::read_stl(&mut cursor).map_err(|e| format!("STL parse error: {e}"))?;
