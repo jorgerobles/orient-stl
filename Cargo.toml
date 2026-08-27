@@ -6,6 +6,7 @@ members = [
     "crates/mesher",
     "crates/orient",
     "crates/geometry-kernel",
+    "crates/support",
 ]
 
 [profile.release]
