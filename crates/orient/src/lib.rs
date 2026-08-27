@@ -347,6 +347,29 @@ pub fn compute_mesh_oridata(positions: &[f32], mode: &str, dedupe_angle_deg: f32
     serde_wasm_bindgen::to_value(&od).map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
 }
 
+/// Compute candidate directions from mesh positions only (no full OriData overhead).
+/// Returns flat [x,y,z, x,y,z, ...] direction vectors.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn compute_directions(positions: &[f32], dedupe_angle_deg: f32) -> Vec<f32> {
+    let m = precompute_mesh(positions);
+    if m.triangle_count == 0 {
+        return Vec::new();
+    }
+    let hull_verts = decimate::sample_for_hull(&m.vertices);
+    let h = hull::compute_hull(&hull_verts);
+    if h.face_normals.is_empty() {
+        return Vec::new();
+    }
+    let directions = candidates::generate_candidates(&h);
+    let deduped = candidates::deduplicate_directions(&directions, dedupe_angle_deg);
+    let mut dir_flat = Vec::with_capacity(deduped.len() * 3);
+    for d in &deduped {
+        dir_flat.push(d[0]); dir_flat.push(d[1]); dir_flat.push(d[2]);
+    }
+    dir_flat
+}
+
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn refine_orientation(

@@ -4,6 +4,7 @@ import type { OriData, Candidate, ComputeConfig } from './types';
 import { MAX_FILE_BYTES, DEFAULT_PROFILE, MIN_ANGLE_DEG } from './constants';
 import { WEIGHT_PRESETS } from './profiles';
 import { DEFAULT_RANKER } from './constants';
+import { compute_directions } from '../pkg/orient/orient.js';
 
 export type ProgressCallback = (label: string, pct: number) => void;
 
@@ -24,11 +25,13 @@ export async function loadWithProgress(
 
   if (result.positions.length === 0) throw new Error('No triangles in STL');
 
+  const directions = compute_directions(result.positions, 3.0);
+
   return {
     positions: result.positions,
     normals: result.normals,
     areas: result.areas,
-    directions: new Float32Array(0), // computed by orient worker
+    directions,
     candidates: result.candidates,
   };
 }

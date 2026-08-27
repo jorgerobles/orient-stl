@@ -7,3 +7,7 @@ members = [
     "crates/orient",
     "crates/geometry-kernel",
 ]
+
+[profile.release]
+opt-level = "s"
+lto = true

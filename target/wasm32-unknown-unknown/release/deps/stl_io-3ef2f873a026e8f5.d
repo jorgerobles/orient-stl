@@ -1,0 +1,12 @@
+/home/r2d2/Sandbox/orient-stl/target/wasm32-unknown-unknown/release/deps/stl_io-3ef2f873a026e8f5.d: /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/lib.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/ascii_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/binary_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/types.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/utils.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/writer.rs
+
+/home/r2d2/Sandbox/orient-stl/target/wasm32-unknown-unknown/release/deps/libstl_io-3ef2f873a026e8f5.rlib: /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/lib.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/ascii_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/binary_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/types.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/utils.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/writer.rs
+
+/home/r2d2/Sandbox/orient-stl/target/wasm32-unknown-unknown/release/deps/libstl_io-3ef2f873a026e8f5.rmeta: /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/lib.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/ascii_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/binary_reader.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/types.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/utils.rs /home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/writer.rs
+
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/lib.rs:
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/ascii_reader.rs:
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/binary_reader.rs:
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/types.rs:
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/utils.rs:
+/home/r2d2/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/stl_io-0.11.0/src/writer.rs:

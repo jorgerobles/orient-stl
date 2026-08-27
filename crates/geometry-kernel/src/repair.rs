@@ -18,7 +18,7 @@ impl Edge {
 
 /// Fix face normals by propagating orientation from a seed triangle.
 /// Returns number of flipped triangles.
-pub fn fix_normals(vertices: &mut [f32], indices: &mut [u32]) -> u32 {
+pub fn fix_normals(_vertices: &mut [f32], indices: &mut [u32]) -> u32 {
     if indices.len() < 3 {
         return 0;
     }
@@ -303,7 +303,7 @@ pub fn remove_invisible_surfaces(
 /// Fill boundary holes using ear-clipping triangulation.
 /// Returns number of holes filled.
 pub fn fill_boundary_holes(
-    vertices: &mut Vec<f32>,
+    _vertices: &mut Vec<f32>,
     indices: &mut Vec<u32>,
     max_groups: u32,
 ) -> u32 {
