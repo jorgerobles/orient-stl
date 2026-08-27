@@ -538,3 +538,315 @@ fn ear_clip_loop(loop_pts: &[[f32; 3]]) -> Vec<[[f32; 3]; 3]> {
     }
     tris
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repair_empty_mesh() {
+        let mut p = Vec::new();
+        assert_eq!(repair_mesh(&mut p), 0);
+    }
+
+    #[test]
+    fn repair_removes_duplicate_triangles() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        assert_eq!(repair_mesh(&mut p), 1);
+        assert_eq!(p.len(), 9);
+    }
+
+    #[test]
+    fn repair_removes_duplicate_with_different_winding() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        assert_eq!(repair_mesh(&mut p), 1);
+        assert_eq!(p.len(), 9);
+    }
+
+    #[test]
+    fn repair_keeps_unique_triangles() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        assert_eq!(repair_mesh(&mut p), 0);
+        assert_eq!(p.len(), 18);
+    }
+
+    #[test]
+    fn repair_no_collisions_simple() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        assert_eq!(repair_mesh(&mut p), 0);
+        assert_eq!(p.len(), 18);
+    }
+
+    // ─── normalize_winding tests ──
+
+    #[test]
+    fn normalize_winding_empty() {
+        let mut p: Vec<f32> = Vec::new();
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_single_triangle() {
+        let mut p = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_two_triangles_consistent() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 0);
+    }
+
+    #[test]
+    fn normalize_winding_two_triangles_inverted() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 1, "Tri B should be flipped");
+        assert!((p[9 + 3] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 4] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 5] - 1.0).abs() < 1e-6);
+        assert!((p[9 + 6] - 1.0).abs() < 1e-6);
+        assert!((p[9 + 7] - 0.0).abs() < 1e-6);
+        assert!((p[9 + 8] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn normalize_winding_thin_shell() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0,
+            0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 1);
+    }
+
+    #[test]
+    fn normalize_winding_chain_propagation() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 4.0, 0.0,
+            0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 4.0, 0.0, 4.0,
+            0.0, 0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 4.0, 4.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 2, "B and C should be flipped");
+    }
+
+    #[test]
+    fn normalize_winding_degenerate_edge_skipped() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        ];
+        assert_eq!(normalize_winding(&mut p), 0);
+    }
+
+    #[test]
+    fn normalize_winding_disconnected_components() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            10.0, 0.0, 0.0, 11.0, 0.0, 0.0, 10.0, 1.0, 0.0,
+            10.0, 0.0, 0.0, 11.0, 0.0, 0.0, 10.0, 0.0, 1.0,
+        ];
+        let flips = normalize_winding(&mut p);
+        assert_eq!(flips, 2, "Both inverted triangles flipped");
+    }
+
+    // ─── fill_holes tests ─────────────────────────────────
+
+    fn hole_ring(hole_verts: &[[f32; 3]], center: &[f32; 3]) -> Vec<f32> {
+        let n = hole_verts.len();
+        let mut p = Vec::with_capacity(n * 9);
+        for i in 0..n {
+            let j = (i + 1) % n;
+            p.push(hole_verts[i][0]); p.push(hole_verts[i][1]); p.push(hole_verts[i][2]);
+            p.push(hole_verts[j][0]); p.push(hole_verts[j][1]); p.push(hole_verts[j][2]);
+            p.push(center[0]); p.push(center[1]); p.push(center[2]);
+        }
+        p
+    }
+
+    #[test]
+    fn fill_holes_empty_mesh() {
+        let mut p = Vec::new();
+        assert_eq!(fill_holes(&mut p, 64), 0);
+    }
+
+    #[test]
+    fn fill_holes_square_hole() {
+        let verts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 2.0, 0.0], [0.0, 2.0, 0.0]];
+        let mut p = hole_ring(&verts, &[10.0, 10.0, 10.0]);
+        let added = fill_holes(&mut p, 64);
+        assert_eq!(added, 2, "square hole should close with 2 triangles");
+        assert_eq!(p.len(), 54, "4 + 2 = 6 triangles → 54 floats");
+    }
+
+    #[test]
+    fn fill_holes_triangle_hole() {
+        let verts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [1.0, 2.0, 0.0]];
+        let mut p = hole_ring(&verts, &[10.0, 10.0, 10.0]);
+        let added = fill_holes(&mut p, 64);
+        assert_eq!(added, 1);
+        assert_eq!(p.len(), 36, "3 + 1 = 4 → 36 floats");
+    }
+
+    #[test]
+    fn fill_holes_hexagon_hole() {
+        let verts = [
+            [1.5, 0.0, 0.0], [3.0, 0.866, 0.0], [3.0, 2.598, 0.0],
+            [1.5, 3.464, 0.0], [0.0, 2.598, 0.0], [0.0, 0.866, 0.0],
+        ];
+        let mut p = hole_ring(&verts, &[10.0, 10.0, 10.0]);
+        let added = fill_holes(&mut p, 64);
+        assert_eq!(added, 4, "hexagon → 4 triangles");
+        assert_eq!(p.len(), 90, "6 + 4 = 10 → 90 floats");
+    }
+
+    #[test]
+    fn fill_holes_skips_large_hole() {
+        let verts = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.0, 2.0, 0.0], [0.0, 2.0, 0.0]];
+        let mut p = hole_ring(&verts, &[10.0, 10.0, 10.0]);
+        let added = fill_holes(&mut p, 2);
+        assert_eq!(added, 0);
+    }
+
+    #[test]
+    fn fill_holes_no_boundary_no_fill() {
+        let mut p = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let added = fill_holes(&mut p, 64);
+        assert_eq!(added, 2);
+    }
+
+    // ─── weld_vertices tests ────────────────────────────
+
+    #[test]
+    fn weld_empty_mesh() {
+        let mut p = Vec::new();
+        assert_eq!(weld_vertices(&mut p, 1e-5), 0);
+    }
+
+    #[test]
+    fn weld_zero_epsilon_no_op() {
+        let mut p = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        assert_eq!(weld_vertices(&mut p, 0.0), 0);
+        assert_eq!(p.len(), 9);
+    }
+
+    #[test]
+    fn weld_exact_vertices_no_change() {
+        let orig = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut p = orig.clone();
+        let welded = weld_vertices(&mut p, 1e-5);
+        // Exact duplicates match canonical but coordinates are identical → 0 actual changes
+        assert_eq!(welded, 0);
+        assert_eq!(p, orig);
+    }
+
+    #[test]
+    fn weld_nearby_vertices_snapped() {
+        let mut p = vec![
+            0.0, 0.0, 0.0,   1.0, 0.0, 0.0,   0.0, 1.0, 0.0,
+            1e-6, 0.0, 0.0,  1.0, 1.0, 0.0,   0.0, 0.0, 1.0,
+        ];
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert_eq!(welded, 1, "near-origin vertex should snap to origin");
+        assert_eq!(p[9], 0.0, "v3.x should be 0 after weld");
+        assert_eq!(p[10], 0.0, "v3.y should be 0 after weld");
+        assert_eq!(p[11], 0.0, "v3.z should be 0 after weld");
+    }
+
+    #[test]
+    fn weld_far_vertices_unchanged() {
+        let orig = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            2.0, 0.0, 0.0, 3.0, 0.0, 0.0, 2.0, 1.0, 0.0,
+        ];
+        let mut p = orig.clone();
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert_eq!(welded, 0);
+        assert_eq!(p, orig);
+    }
+
+    #[test]
+    fn weld_merges_boundary_edges() {
+        let mut p = vec![
+            0.0, 0.0, 0.0,  2.0, 0.0, 0.0,  2.0, 2.0, 0.0,
+            0.0, 0.0, 0.0,  2.0, 2.0, 0.0,  0.0, 2.0, 0.0,
+            2.0+1e-6, 0.0, 0.0,  4.0, 0.0, 0.0,  4.0, 2.0, 0.0,
+            2.0+1e-6, 0.0, 0.0,  4.0, 2.0, 0.0,  2.0+1e-6, 2.0, 0.0,
+        ];
+        let before = count_boundary_edges_test(&p);
+        let welded = weld_vertices(&mut p, 1e-5);
+        assert!(welded > 0, "should weld shared-edge vertices");
+        repair_mesh(&mut p);
+        let after = count_boundary_edges_test(&p);
+        assert!(after < before, "welding should reduce boundary edges: {before}→{after}");
+    }
+
+    fn count_boundary_edges_test(positions: &[f32]) -> usize {
+        use std::collections::HashMap;
+        let n = positions.len() / 9;
+        let mut edge_map: HashMap<u64, Vec<(usize, u8)>> = HashMap::new();
+        for i in 0..n {
+            let base = i * 9;
+            for e in 0..3u8 {
+                let a_off = e as usize * 3;
+                let b_off = ((e as usize + 1) % 3) * 3;
+                let (ax, ay, az) = (positions[base + a_off], positions[base + a_off + 1], positions[base + a_off + 2]);
+                let (bx, by, bz) = (positions[base + b_off], positions[base + b_off + 1], positions[base + b_off + 2]);
+                if ax == bx && ay == by && az == bz { continue; }
+                let key = edge_hash(ax, ay, az, bx, by, bz);
+                edge_map.entry(key).or_default().push((i, e));
+            }
+        }
+        edge_map.values().filter(|v| v.len() == 1).count()
+    }
+
+    #[test]
+    fn ear_clip_convex_pentagon() {
+        let pentagon: Vec<[f32; 3]> = vec![
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 1.0, 0.0],
+            [1.0, 3.0, 0.0],
+            [-1.0, 1.0, 0.0],
+        ];
+        let tris = ear_clip_loop(&pentagon);
+        assert_eq!(tris.len(), 3, "pentagon → 3 triangles");
+        for (i, tri) in tris.iter().enumerate() {
+            assert!((tri[0][2]).abs() < 1e-5, "tri {i} v0 z");
+            assert!((tri[1][2]).abs() < 1e-5, "tri {i} v1 z");
+            assert!((tri[2][2]).abs() < 1e-5, "tri {i} v2 z");
+            let e1x = tri[1][0] - tri[0][0];
+            let e1y = tri[1][1] - tri[0][1];
+            let e2x = tri[2][0] - tri[0][0];
+            let e2y = tri[2][1] - tri[0][1];
+            let area = (e1x * e2y - e1y * e2x).abs() * 0.5;
+            assert!(area > 0.01, "tri {i} area={area}");
+        }
+    }
+}

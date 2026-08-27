@@ -634,4 +634,43 @@ mod tests {
         let (_, refined_score) = refine_once(&mesh, &dir, 30.0, 50, rng::Rng::new(7));
         assert!(refined_score <= start_score + 1e-6, "refine must not worsen: start={} refined={}", start_score, refined_score);
     }
+
+    #[test]
+    fn right_triangle_xy_plane() {
+        let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let mesh = precompute_mesh(&positions);
+        assert_eq!(mesh.triangle_count, 1);
+        assert!((mesh.normals[0][2] - 1.0).abs() < 1e-6);
+        assert!((mesh.areas[0] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn degenerate_triangle_filtered() {
+        let positions: Vec<f32> = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let mesh = precompute_mesh(&positions);
+        assert_eq!(mesh.triangle_count, 0);
+    }
+
+    #[test]
+    fn normals_are_unit_length() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0, 0.0,
+            1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+        ];
+        let mesh = precompute_mesh(&positions);
+        for n in &mesh.normals {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn mixed_valid_and_degenerate() {
+        let positions: Vec<f32> = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        let mesh = precompute_mesh(&positions);
+        assert_eq!(mesh.triangle_count, 1);
+    }
 }

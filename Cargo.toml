@@ -7,4 +7,3 @@ members = [
     "crates/orient",
     "crates/geometry-kernel",
 ]
-exclude = ["core", "geometry-kernel"]
