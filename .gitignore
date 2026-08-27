@@ -1,4 +1,5 @@
 /core/target/
+/target/
 /web/pkg/
 /web/dist/
 /web/node_modules/
