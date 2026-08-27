@@ -181,10 +181,12 @@ export async function runPipeline(
   onProgress('Scoring orientations...', 90);
 
   const candidates = scoreResult?.candidates ?? [];
+  console.log('[pipeline] Orient complete:', candidates.length, 'candidates');
 
   // Stage 5: Support generation (optional)
   let supports: SupportResult | undefined;
   if (config.generateSupports && candidates.length > 0) {
+    console.log('[pipeline] Generating supports...');
     onProgress('Generating supports...', 92);
     try {
       const supportWorker = new Worker(
@@ -216,10 +218,13 @@ export async function runPipeline(
         console.error('Support generation failed:', response.message);
       } else {
         supports = response.supports;
+        console.log('[pipeline] Supports generated:', supports.supports.length, 'contacts,', supports.islandCount, 'islands');
       }
     } catch (err) {
       console.error('Support generation error:', err);
     }
+  } else if (config.generateSupports) {
+    console.warn('[pipeline] Support generation requested but no candidates to generate from');
   }
 
   onProgress('Done', 100);

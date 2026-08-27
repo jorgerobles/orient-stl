@@ -202,6 +202,7 @@ export class AppController {
       const autoRepair = this.deps.state.get('config').autoRepair;
       const generateSupports = this.deps.state.get('generateSupports');
       const supportConfig = this.deps.state.get('supportConfig');
+      console.log('[handleFile] generateSupports:', generateSupports, 'autoRepair:', autoRepair);
       const fullData = await loadWithProgress(bytes, autoRepair, (label, pct) => {
         this.deps.progressLabel.textContent = label;
         this.deps.progressBar.style.width = pct + '%';
