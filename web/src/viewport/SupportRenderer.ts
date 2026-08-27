@@ -27,6 +27,13 @@ export class SupportRenderer {
 
   render(result: SupportResult): void {
     this.clear();
+
+    console.log('[SupportRenderer] Rendering:', result.supports.length, 'supports,', result.islandCount, 'islands');
+    if (result.supports.length > 0) {
+      const s = result.supports[0];
+      console.log('[SupportRenderer] Sample: type=' + s.contact.supportType + ' pos=' + JSON.stringify(s.contact.position) + ' base=' + JSON.stringify(s.contact.base) + ' tipDia=' + s.contact.tipDiameter);
+    }
+
     this.renderRaft(result.raft);
 
     for (const support of result.supports) {
