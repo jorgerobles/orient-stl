@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { GizmoController, RingAxis } from "./GizmoController";
-import { STEP_DEG, FINE_DEG } from "../constants";
+import { STEP_DEG, FINE_DEG, FINE_DRAG_SCALE } from "../constants";
 
 export class DragHandler {
   private dragMode: RingAxis | null = null;
@@ -173,6 +173,8 @@ export class DragHandler {
         if (delta > Math.PI) delta -= 2 * Math.PI;
         if (delta < -Math.PI) delta += 2 * Math.PI;
         if (this.dragMode !== "camera") delta = -delta;
+        // Shift+drag: 10x finer movement for critical positioning.
+        if (e.shiftKey) delta *= FINE_DRAG_SCALE;
         this.cumulativeAngle += delta;
         const rotQ = new THREE.Quaternion().setFromAxisAngle(
           axis,

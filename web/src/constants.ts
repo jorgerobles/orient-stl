@@ -34,3 +34,7 @@ export const ANGLE_EPSILON = 0.0001;
 // ─── Keyboard rotation ───
 export const STEP_DEG = 5;
 export const FINE_DEG = 1;
+
+// ─── Gizmo drag ───
+// Shift+drag scales the ring rotation delta down 10x for critical positioning.
+export const FINE_DRAG_SCALE = 0.1;
