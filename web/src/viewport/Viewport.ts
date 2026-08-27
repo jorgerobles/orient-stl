@@ -60,7 +60,7 @@ export class Viewport {
     this.plateGroup = new THREE.Group();
     this.scene.add(this.plateGroup);
 
-    this.supportRenderer = new SupportRenderer(this.scene);
+    this.supportRenderer = new SupportRenderer(this.modelGroup);
 
     this.addLights();
     this.addBuildPlate();

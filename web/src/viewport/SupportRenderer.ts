@@ -11,18 +11,18 @@ const MIN_COLUMN_RADIUS = 0.8;
 const BASE_RADIUS_FACTOR = 2.5;
 
 export class SupportRenderer {
-  private scene: THREE.Scene;
+  private parent: THREE.Object3D;
   private group: THREE.Group;
   private columnMeshes: THREE.Mesh[] = [];
   private raftMesh: THREE.Mesh | null = null;
   private _visible = false;
 
-  constructor(scene: THREE.Scene) {
-    this.scene = scene;
+  constructor(parent: THREE.Object3D) {
+    this.parent = parent;
     this.group = new THREE.Group();
     this.group.name = 'supports';
     this.group.visible = false;
-    this.scene.add(this.group);
+    this.parent.add(this.group);
   }
 
   render(result: SupportResult): void {
@@ -127,6 +127,6 @@ export class SupportRenderer {
 
   dispose(): void {
     this.clear();
-    this.scene.remove(this.group);
+    this.parent.remove(this.group);
   }
 }
