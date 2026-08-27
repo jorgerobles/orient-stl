@@ -16,6 +16,7 @@ export class SupportRenderer {
   private columnMeshes: THREE.Mesh[] = [];
   private raftMesh: THREE.Mesh | null = null;
   private _visible = false;
+  private offset: THREE.Vector3 = new THREE.Vector3();
 
   constructor(parent: THREE.Object3D) {
     this.parent = parent;
@@ -23,6 +24,10 @@ export class SupportRenderer {
     this.group.name = 'supports';
     this.group.visible = false;
     this.parent.add(this.group);
+  }
+
+  setOffset(x: number, y: number, z: number): void {
+    this.offset.set(x, y, z);
   }
 
   render(result: SupportResult): void {
@@ -43,8 +48,8 @@ export class SupportRenderer {
 
   private renderColumn(support: Support): void {
     const { contact } = support;
-    const base = new THREE.Vector3(...contact.base);
-    const tip = new THREE.Vector3(...contact.position);
+    const base = new THREE.Vector3(...contact.base).add(this.offset);
+    const tip = new THREE.Vector3(...contact.position).add(this.offset);
     const height = base.distanceTo(tip);
     if (height < 0.01) return;
 
@@ -77,7 +82,14 @@ export class SupportRenderer {
     if (raft.vertices.length === 0) return;
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(raft.vertices, 3));
+    const vertices = new Float32Array(raft.vertices);
+    // Apply offset to raft vertices
+    for (let i = 0; i < vertices.length; i += 3) {
+      vertices[i] += this.offset.x;
+      vertices[i + 1] += this.offset.y;
+      vertices[i + 2] += this.offset.z;
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geo.setIndex(new THREE.BufferAttribute(new Uint32Array(raft.triangles), 1));
     geo.computeVertexNormals();
 

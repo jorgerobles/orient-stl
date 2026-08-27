@@ -222,6 +222,7 @@ export class Viewport {
     );
     geometry.translate(bake.x, bake.y, bake.z);
     this.modelGroup.position.set(0, this.boundingRadius, 0);
+    this.supportRenderer.setOffset(bake.x, bake.y, bake.z);
 
     geometry.computeBoundingBox();
     const bb = geometry.boundingBox!;
