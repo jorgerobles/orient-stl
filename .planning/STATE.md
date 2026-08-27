@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: Phase 7 wave 2 — repair/decimate landed + winding normalization
-last_updated: "2026-07-15T01:00:00.000Z"
-last_activity: 2026-07-15 -- Wave 2: STL repair, CLI decimation, winding normalization
+stopped_at: Phase 8 complete — workspace split landed
+last_updated: "2026-08-27T00:00:00.000Z"
+last_activity: 2026-08-27 -- Phase 8: workspace split into independent WASM crates
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 24
-  completed_plans: 17
-  percent: 71
+  completed_plans: 20
+  percent: 83
 ---
 
 # Project State
@@ -21,29 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** Generate a reliable orientation ranking that minimizes supports and maximizes print success, without the user manually rotating the model.
-**Current focus:** Phase 7 Wave 2 — STL repair, CLI decimation, warning cleanups + winding normalization (WIP on winding-propagation branch)
+**Current focus:** Phase 8 complete — workspace split into independent WASM crates (stl-parse, stl-repair, mesher, orient, geometry-kernel)
 
 ## Current Position
 
-Phase: 07 — Correctness Fixes + H11 Scoring (in progress)
-Plan: 1/5 (wave 2: repair + decimate merged; winding WIP on branch)
-Status: In Progress
-Last activity: 2026-07-17
+Phase: 08 — Workspace Split (complete)
+Plan: 3/3 (all complete)
+Status: Complete
+Last activity: 2026-08-27
 
-### Phase 7 status
+### Phase 8 status
 
 | Plan | Status | Notes |
 |------|--------|-------|
-| 07-01 Tangent perturbation fix | ⏳ Planned | refine_once perp not perpendicular (dot=dir[0]·dir[2]·(u2-u1)); reuse perpendicular_basis |
-| 07-02 Area-weighted COM + hull param | ⏳ Planned | stability.rs vertex centroid → area-weighted; remove unused hull param |
-| 07-03 Delete dead yaw subgraph | ⏳ Planned | candidates.rs compute_default_yaw + 7-dependents chain (already #[deprecated]) |
-| 07-04 Wire H11 into composite score | ⏳ Planned | shadowed displayed but not scored; breaks WASM API (weights 5→6, bounds 10→12, score_direction 8→9) |
-| 07-05 Repair + decimate | ✅ Complete | O(n) duplicate removal, CLI --decimate (default 12K), warning cleanups, constants refactor |
-| 07-06 Winding normalization | 🚧 Branch winding-propagation | Edge-adjacency propagation, not centroid heuristic |
-
-### Next step
-
-Execute 07-06 on `winding-propagation` branch (edge-adjacency winding normalization), then re-evaluate speckled red on broken.stl.
+| 08-01 Workspace root + crate scaffolding | ✅ Complete | 5 crates under crates/, geometry-kernel rlib-only, 105 tests pass |
+| 08-02 JS workers + pipeline | ✅ Complete | 4 WASM workers, pipeline.ts orchestrator, Makefile updated |
+| 08-03 Cleanup + verify | ✅ Complete | Orphan files deleted, CLI composability verified, full test suite green |
 
 ### Phase 6 status (final)
 
@@ -142,11 +135,9 @@ Resume file: None
 ### Infrastructure State
 
 - Vite dev server: stopped
-- WASM binary: `web/pkg/orient_core_bg.wasm` (195KB — all metrics + ranking + selection)
-- TypeScript: `npx tsc --noEmit` passes (38 tests)
+- WASM binaries: web/pkg/{stl-parse,stl-repair,mesher,orient}/ (4 independent modules)
+- TypeScript: `npx tsc --noEmit` passes (78 tests)
 - Build: `npm run build` succeeds
-- Rust: `cargo test` passes (96 unit + 1 integration)
-- TS metric/ranking/selection functions: **0 remaining** (all migrated to Rust WASM)
-- ScorePanel: legends updated to layman-friendly text
-- STL export: `inverseConvention` added to convention.ts, wired into export flow
-- Debug resolved: cli-scoring-pipeline-hang (bottleneck confirmed as scoring loop, not repair)
+- Rust: `cargo test --workspace` passes (105 unit + 1 ignored)
+- CLI: `cargo run --features cli -p orient -- -s file.stl` works
+- workspace root Cargo.toml with [profile.release] opt-level="s" lto=true
