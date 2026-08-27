@@ -183,31 +183,40 @@ export async function runPipeline(
   let supports: SupportResult | undefined;
   if (config.generateSupports && scoreResult.candidates.length > 0) {
     onProgress('Generating supports...', 92);
-    const supportWorker = new Worker(
-      new URL('./workers/support.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    try {
+      const supportWorker = new Worker(
+        new URL('./workers/support.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
 
-    // Extract direction from best candidate quaternion
-    const bestQ = scoreResult.candidates[0].quaternion;
-    // Quaternion to direction: apply q to [0, -1, 0] (build direction)
-    const qw = bestQ[0], qx = bestQ[1], qy = bestQ[2], qz = bestQ[3];
-    // Rotate [0, -1, 0] by quaternion
-    const dx = 2 * (qx * qz + qw * qy);
-    const dy = 2 * (qy * qz - qw * qx);
-    const dz = 1 - 2 * (qx * qx + qy * qy);
-    const direction = new Float32Array([dx, dy, dz]);
+      // Extract direction from best candidate quaternion
+      const bestQ = scoreResult.candidates[0].quaternion;
+      // Quaternion to direction: apply q to [0, -1, 0] (build direction)
+      const qw = bestQ[0], qx = bestQ[1], qy = bestQ[2], qz = bestQ[3];
+      // Rotate [0, -1, 0] by quaternion
+      const dx = 2 * (qx * qz + qw * qy);
+      const dy = 2 * (qy * qz - qw * qx);
+      const dz = 1 - 2 * (qx * qx + qy * qy);
+      const direction = new Float32Array([dx, dy, dz]);
 
-    const supportResult = await runWorker<SupportResponse>(supportWorker, {
-      type: 'support',
-      positions: meshed.positions,
-      normals: meshed.normals,
-      areas: meshed.areas,
-      direction,
-      config: config.support!,
-    });
-    supportWorker.terminate();
-    supports = supportResult.supports;
+      const response = await runWorker<SupportResponse | ErrorResponse>(supportWorker, {
+        type: 'support',
+        positions: meshed.positions,
+        normals: meshed.normals,
+        areas: meshed.areas,
+        direction,
+        config: config.support!,
+      });
+      supportWorker.terminate();
+
+      if (response.type === 'error') {
+        console.error('Support generation failed:', response.message);
+      } else {
+        supports = response.supports;
+      }
+    } catch (err) {
+      console.error('Support generation error:', err);
+    }
   }
 
   onProgress('Done', 100);
